@@ -514,7 +514,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 "window_open": False,
                 "override_active": False,
                 "override_type": None,
-                "override_temp": None,
+                "override_heat": None,
+                "override_cool": None,
                 "override_until": None,
                 "override_suppressed": False,
                 "active_schedule_index": -1,
@@ -1402,15 +1403,15 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         """
         from .utils.schedule_utils import find_active_block
 
-        # 1. Override — single-point target (suppressed when presence-away clears it)
-        override_temp = room.get("override_temp")
+        # 1. Override — split heat/cool dead-band (suppressed when presence-away clears it)
+        override_heat = room.get("override_heat")
+        override_cool = room.get("override_cool")
         override_until = room.get("override_until")
-        if override_temp is not None:
+        if override_heat is not None or override_cool is not None:
             if override_until is None or time.time() < override_until:
                 presence_away_now = not room.get("ignore_presence", False) and self._is_presence_away(room, settings)
                 if not (presence_away_now and bool(settings.get("presence_clears_override", False))):
-                    t = float(override_temp)
-                    return TargetTemps(heat=t, cool=t)
+                    return TargetTemps(heat=override_heat, cool=override_cool)
             else:
                 # Timed override has expired — auto-clear
                 area_id = room.get("area_id", "unknown")
@@ -1419,7 +1420,8 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                     store.async_update_room(
                         area_id,
                         {
-                            "override_temp": None,
+                            "override_heat": None,
+                            "override_cool": None,
                             "override_until": None,
                             "override_type": None,
                         },
