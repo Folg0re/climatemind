@@ -60,6 +60,11 @@ class _RoomCoverState:
     user_override_until: float = 0.0  # Unix timestamp; 0 = no override
     last_was_forced: bool = False  # True after forced position (schedule/night close)
     last_command_ts: float = 0.0  # timestamp of last issued command (for transit settling)
+    owned: bool = False  # current position was produced by RoomMind
+    baseline_position: int | None = None  # position before first deploy of a shading episode
+    travel_from: int | None = None  # real reading at command time (travel corridor anchor)
+    last_reading: int | None = None  # last real reading; never overwritten by commands
+    drift_latched: bool = False  # current drift episode already armed an override once
 
 
 class CoverManager:
@@ -75,32 +80,56 @@ class CoverManager:
     def update_position(self, area_id: str, position: int, override_minutes: int = COVER_USER_OVERRIDE_MINUTES) -> None:
         """Update the tracked position from HA state. Call before evaluate().
 
-        Detects user manual override: if the cover position differs significantly
-        from the last position RoomMind commanded (in either direction), the user
-        moved it manually. In that case, auto control pauses for
-        ``override_minutes``.
-
-        Compares against ``last_commanded_position`` (stable across cycles) rather
-        than ``current_position`` so that detection survives the 90 s settling
-        window even when the HA-reported position is read repeatedly.
+        Detects user manual moves by comparing readings against the last
+        commanded position. Movement along the travel corridor toward the
+        target is RoomMind's own motion. Anything else arms a user override
+        for ``override_minutes``, releases RoomMind's ownership of the
+        position and drops the shading baseline.
         """
         state = self._get_state(area_id)
-        _drift = (
-            state.last_commanded_position is not None
-            and abs(position - state.last_commanded_position) > COVER_USER_CONFLICT_THRESHOLD
-            and (time.time() - state.last_command_ts) >= COVER_TRANSITION_SETTLE_S
-        )
-        if _drift and override_minutes > 0:
-            if state.user_override_until == 0 or position != state.current_position:
-                state.user_override_until = time.time() + override_minutes * 60
+        prev = state.last_reading
+        state.last_reading = position
+        state.current_position = position
+
+        if override_minutes <= 0 or state.last_commanded_position is None:
+            return
+
+        now = time.time()
+        target = state.last_commanded_position
+
+        if abs(position - target) <= COVER_USER_CONFLICT_THRESHOLD:
+            state.travel_from = None
+            state.drift_latched = False
+            return
+
+        moved = prev is not None and position != prev
+
+        if moved and state.travel_from is not None and prev is not None:
+            lo = min(state.travel_from, target) - COVER_USER_CONFLICT_THRESHOLD
+            hi = max(state.travel_from, target) + COVER_USER_CONFLICT_THRESHOLD
+            if lo <= position <= hi and abs(position - target) < abs(prev - target):
+                return
+
+        if not moved and (now - state.last_command_ts) < COVER_TRANSITION_SETTLE_S:
+            return
+
+        state.owned = False
+        state.baseline_position = None
+        state.travel_from = None
+        if state.user_override_until <= now:
+            if moved or not state.drift_latched:
+                state.user_override_until = now + override_minutes * 60
+                state.drift_latched = True
                 _LOGGER.info(
                     "Cover user override detected [%s]: position %d vs commanded %d → pausing %d min",
                     area_id,
                     position,
-                    state.last_commanded_position,
+                    target,
                     override_minutes,
                 )
-        state.current_position = position
+        elif moved:
+            state.user_override_until = now + override_minutes * 60
+            state.drift_latched = True
 
     def get_current_position(self, area_id: str) -> int:
         """Return the last-known cover position for a room (100 if unknown)."""
@@ -302,8 +331,11 @@ class CoverManager:
         return self._states[area_id]
 
     def _apply_change(self, state: _RoomCoverState, position: int, reason: str) -> CoverDecision:
+        state.travel_from = state.current_position
         state.current_position = position
         state.last_commanded_position = position
         state.last_change_ts = time.time()
         state.last_command_ts = time.time()
+        state.owned = True
+        state.drift_latched = False
         return CoverDecision(target_position=position, changed=True, reason=reason)

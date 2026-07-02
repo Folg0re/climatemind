@@ -1297,3 +1297,120 @@ def test_set_commanded_position():
     mgr._get_state("lr").last_commanded_position = 10
     mgr.set_commanded_position("lr", 25)
     assert mgr._get_state("lr").last_commanded_position == 25
+
+
+# ── Detection v2: corridor-based user-action detection ─────────────────
+
+
+@patch("custom_components.roommind.managers.cover_manager.time")
+def test_counter_reversal_arms_override_immediately(mock_t):
+    """User counters a command mid-travel → reversal arms the override at once."""
+    mgr = CoverManager()
+    mock_t.time.return_value = 990.0
+    mgr.update_position("lr", 100)
+    mock_t.time.return_value = 1000.0
+    d = mgr.evaluate("lr", predicted_peak_temp=25.0, target_temp=21.0, **_BASE_KWARGS)
+    assert d.changed is True and d.target_position < 100
+    mock_t.time.return_value = 1030.0
+    mgr.update_position("lr", 70)
+    assert mgr.is_user_override_active("lr") is False
+    mock_t.time.return_value = 1060.0
+    mgr.update_position("lr", 100)
+    assert mgr.is_user_override_active("lr") is True
+    assert mgr._get_state("lr").owned is False
+    assert mgr._get_state("lr").baseline_position is None
+
+
+@patch("custom_components.roommind.managers.cover_manager.time")
+def test_counter_stationary_arms_after_settle_window(mock_t):
+    """Counter with no intermediate reading arms once the settle window expires."""
+    mgr = CoverManager()
+    mock_t.time.return_value = 990.0
+    mgr.update_position("lr", 100)
+    mock_t.time.return_value = 1000.0
+    mgr.evaluate("lr", predicted_peak_temp=25.0, target_temp=21.0, **_BASE_KWARGS)
+    mock_t.time.return_value = 1030.0
+    mgr.update_position("lr", 100)
+    assert mgr.is_user_override_active("lr") is False
+    mock_t.time.return_value = 1095.0
+    mgr.update_position("lr", 100)
+    assert mgr.is_user_override_active("lr") is True
+
+
+@patch("custom_components.roommind.managers.cover_manager.time")
+def test_slow_cover_travel_beyond_settle_no_false_override(mock_t):
+    """Continuously reporting covers travelling > 90 s never self-trigger."""
+    mgr = CoverManager()
+    mock_t.time.return_value = 990.0
+    mgr.update_position("lr", 100)
+    mock_t.time.return_value = 1000.0
+    mgr.evaluate("lr", predicted_peak_temp=25.0, target_temp=21.0, **_BASE_KWARGS)
+    for ts, pos in [(1040.0, 80), (1100.0, 60), (1160.0, 40), (1220.0, 10)]:
+        mock_t.time.return_value = ts
+        mgr.update_position("lr", pos)
+        assert mgr.is_user_override_active("lr") is False, f"false override at pos {pos}"
+    assert mgr._get_state("lr").owned is True
+
+
+@patch("custom_components.roommind.managers.cover_manager.time")
+def test_completion_only_reporting_cover_no_false_override(mock_t):
+    """Covers reporting only the final position stay silent during the settle window."""
+    mgr = CoverManager()
+    mock_t.time.return_value = 990.0
+    mgr.update_position("lr", 100)
+    mock_t.time.return_value = 1000.0
+    mgr.evaluate("lr", predicted_peak_temp=25.0, target_temp=21.0, **_BASE_KWARGS)
+    commanded = mgr._get_state("lr").last_commanded_position
+    mock_t.time.return_value = 1030.0
+    mgr.update_position("lr", 100)
+    mock_t.time.return_value = 1060.0
+    mgr.update_position("lr", 100)
+    mock_t.time.return_value = 1080.0
+    mgr.update_position("lr", commanded)
+    assert mgr.is_user_override_active("lr") is False
+    assert mgr._get_state("lr").travel_from is None
+
+
+@patch("custom_components.roommind.managers.cover_manager.time")
+def test_user_stop_mid_travel_arms_after_window(mock_t):
+    """Cover stopped off-target (user hit stop) arms after the settle window."""
+    mgr = CoverManager()
+    mock_t.time.return_value = 990.0
+    mgr.update_position("lr", 100)
+    mock_t.time.return_value = 1000.0
+    mgr.evaluate("lr", predicted_peak_temp=25.0, target_temp=21.0, **_BASE_KWARGS)
+    mock_t.time.return_value = 1040.0
+    mgr.update_position("lr", 80)
+    mock_t.time.return_value = 1070.0
+    mgr.update_position("lr", 80)
+    assert mgr.is_user_override_active("lr") is False
+    mock_t.time.return_value = 1100.0
+    mgr.update_position("lr", 80)
+    assert mgr.is_user_override_active("lr") is True
+
+
+@patch("custom_components.roommind.managers.cover_manager.time")
+def test_stale_expired_override_does_not_block_arming(mock_t):
+    """Arming works although an old expired override timestamp exists."""
+    mgr = CoverManager()
+    state = mgr._get_state("lr")
+    state.user_override_until = 500.0
+    state.last_commanded_position = 100
+    mock_t.time.return_value = 1000.0
+    mgr.update_position("lr", 100)
+    mock_t.time.return_value = 1030.0
+    mgr.update_position("lr", 0)
+    assert mgr.is_user_override_active("lr") is True
+
+
+@patch("custom_components.roommind.managers.cover_manager.time")
+def test_apply_change_records_travel_and_ownership(mock_t):
+    mgr = CoverManager()
+    mock_t.time.return_value = 990.0
+    mgr.update_position("lr", 100)
+    mock_t.time.return_value = 1000.0
+    mgr.evaluate("lr", predicted_peak_temp=25.0, target_temp=21.0, **_BASE_KWARGS)
+    state = mgr._get_state("lr")
+    assert state.owned is True
+    assert state.travel_from == 100
+    assert state.drift_latched is False
