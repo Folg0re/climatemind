@@ -177,6 +177,7 @@ class CoverManager:
             if state.user_override_until > time.time():
                 return CoverDecision(target_position=current, changed=False, reason="user_override_active")
             state.last_was_forced = True
+            state.baseline_position = None
             if abs(forced_position - current) <= 2:
                 return CoverDecision(
                     target_position=current, changed=False, reason=f"forced_at_target({forced_reason})"
@@ -188,12 +189,16 @@ class CoverManager:
             return CoverDecision(target_position=current, changed=False, reason="disabled")
 
         # Gate 2.5: Schedule gate — a gate-mode schedule is off, suppress solar logic
-        # Retract covers (open) when gate is inactive, subject to rate limit.
+        # Retract owned covers (open) when gate is inactive, subject to rate limit.
         if not solar_gated:
             state.last_was_forced = False
-            if current < 100 and (time.time() - state.last_change_ts) >= COVER_MIN_HOLD_SECONDS:
-                return self._apply_change(state, 100, "gate_retract")
-            return CoverDecision(target_position=current, changed=False, reason="gate_inactive")
+            return self._retract_decision(
+                state,
+                "gate_inactive",
+                "gate_retract",
+                hold_time_ok=(time.time() - state.last_change_ts) >= COVER_MIN_HOLD_SECONDS,
+                rate_limited_reason="gate_inactive",
+            )
 
         # Gate 3: Manual override — never fight the user
         if has_active_override:
@@ -218,37 +223,43 @@ class CoverManager:
             )
             if solar_threat:
                 return CoverDecision(target_position=current, changed=False, reason="low_solar_but_peak_predicted")
-            if current < 100:
-                if not was_forced and (time.time() - state.last_change_ts) < COVER_MIN_HOLD_SECONDS:
-                    return CoverDecision(target_position=current, changed=False, reason="min_hold_time")
-                return self._apply_change(state, 100, "low_solar_retract")
-            return CoverDecision(target_position=100, changed=False, reason="low_solar")
+            return self._retract_decision(
+                state,
+                "low_solar",
+                "low_solar_retract",
+                hold_time_ok=was_forced or (time.time() - state.last_change_ts) >= COVER_MIN_HOLD_SECONDS,
+            )
 
         # Compute desired position
         excess = predicted_peak_temp - target_temp
         retract_threshold = covers_deploy_threshold - COVER_HYSTERESIS
+        now = time.time()
+        hold_time_ok = was_forced or (now - state.last_change_ts) >= COVER_MIN_HOLD_SECONDS
 
-        if excess > covers_deploy_threshold:
-            if covers_snap_deploy:
-                desired_pos = covers_min_position
-            else:
-                raw_close_pct = min(100, int((excess - covers_deploy_threshold) * COVER_POS_SCALE))
-                desired_pos = max(covers_min_position, 100 - raw_close_pct)
-        elif excess < retract_threshold:
-            desired_pos = 100
-        else:
+        if excess < retract_threshold:
+            return self._retract_decision(state, "deadband", "retract", hold_time_ok=hold_time_ok)
+        if excess <= covers_deploy_threshold:
             # Hysteresis band — hold
             return CoverDecision(target_position=current, changed=False, reason="hysteresis_hold")
 
-        # Rate-limit: minimum hold time between changes (skip after forced)
-        now = time.time()
-        if not was_forced and (now - state.last_change_ts) < COVER_MIN_HOLD_SECONDS:
+        if covers_snap_deploy:
+            desired_pos = covers_min_position
+        else:
+            raw_close_pct = min(100, int((excess - covers_deploy_threshold) * COVER_POS_SCALE))
+            desired_pos = max(covers_min_position, 100 - raw_close_pct)
+        if state.baseline_position is not None:
+            desired_pos = min(desired_pos, state.baseline_position)
+        if desired_pos > current and not state.owned:
+            return CoverDecision(target_position=current, changed=False, reason="user_position_hold")
+
+        if not hold_time_ok:
             return CoverDecision(target_position=current, changed=False, reason="min_hold_time")
 
-        # Deadband: ignore small position changes to avoid motor wear
         if abs(desired_pos - current) <= COVER_POS_DEADBAND:
             return CoverDecision(target_position=current, changed=False, reason="deadband")
 
+        if not state.owned and state.baseline_position is None:
+            state.baseline_position = current
         reason = f"deploy(excess={excess:.2f}°C→pos={desired_pos}%)" if desired_pos < 100 else "retract"
         return self._apply_change(state, desired_pos, reason)
 
@@ -339,3 +350,23 @@ class CoverManager:
         state.owned = True
         state.drift_latched = False
         return CoverDecision(target_position=position, changed=True, reason=reason)
+
+    def _retract_decision(
+        self,
+        state: _RoomCoverState,
+        hold_reason: str,
+        apply_reason: str,
+        hold_time_ok: bool,
+        rate_limited_reason: str = "min_hold_time",
+    ) -> CoverDecision:
+        current = state.current_position
+        target = state.baseline_position if state.baseline_position is not None else 100
+        if current >= target or abs(target - current) <= COVER_POS_DEADBAND:
+            state.baseline_position = None
+            return CoverDecision(target_position=current, changed=False, reason=hold_reason)
+        if not state.owned:
+            return CoverDecision(target_position=current, changed=False, reason="user_position_hold")
+        if not hold_time_ok:
+            return CoverDecision(target_position=current, changed=False, reason=rate_limited_reason)
+        state.baseline_position = None
+        return self._apply_change(state, target, apply_reason)

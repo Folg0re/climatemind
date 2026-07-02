@@ -223,7 +223,20 @@ def test_snap_deploy_retract_unchanged():
     mgr._get_state("lr").current_position = 0
     mgr._get_state("lr").last_change_ts = 0
     d = mgr.evaluate("lr", predicted_peak_temp=20.0, target_temp=22.0, covers_snap_deploy=True, **_BASE_KWARGS)
-    assert d.target_position == 100
+    assert d.changed is False
+    assert d.reason == "user_position_hold"
+    assert d.target_position == 0
+
+
+def test_snap_deploy_retract_when_owned_opens_to_100():
+    mgr = CoverManager()
+    state = mgr._get_state("lr")
+    state.current_position = 0
+    state.last_commanded_position = 0
+    state.owned = True
+    state.last_change_ts = 0
+    d = mgr.evaluate("lr", covers_snap_deploy=True, predicted_peak_temp=20.0, target_temp=22.0, **_BASE_KWARGS)
+    assert d.changed is True and d.target_position == 100
 
 
 def test_snap_deploy_hysteresis_hold():
@@ -887,7 +900,20 @@ def test_solar_just_below_min_retracts():
     mgr = CoverManager()
     mgr._get_state("lr").current_position = 50
     kwargs = {k: v for k, v in _BASE_KWARGS.items() if k != "q_solar"}
-    # peak=21 < target+threshold=23.5 → no solar threat → retract
+    # peak=21 < target+threshold=23.5 → no solar threat → hold (unowned position)
+    d = mgr.evaluate("lr", predicted_peak_temp=21.0, target_temp=22.0, q_solar=0.14, **kwargs)
+    assert d.changed is False
+    assert d.reason == "user_position_hold"
+
+
+def test_solar_just_below_min_retracts_when_owned():
+    """q_solar just below COVER_SOLAR_MIN retracts owned covers when no solar threat."""
+    mgr = CoverManager()
+    state = mgr._get_state("lr")
+    state.current_position = 50
+    state.last_commanded_position = 50
+    state.owned = True
+    kwargs = {k: v for k, v in _BASE_KWARGS.items() if k != "q_solar"}
     d = mgr.evaluate("lr", predicted_peak_temp=21.0, target_temp=22.0, q_solar=0.14, **kwargs)
     assert d.changed is True
     assert d.target_position == 100
@@ -1056,9 +1082,22 @@ async def test_async_apply_mixed_availability(mock_t):
 
 
 def test_low_solar_retracts_when_no_solar_threat():
-    """Low solar + predicted peak below threshold → retract covers."""
+    """Low solar + predicted peak below threshold → hold (unowned position)."""
     mgr = CoverManager()
     mgr._get_state("lr").current_position = 50
+    kwargs = {k: v for k, v in _BASE_KWARGS.items() if k != "q_solar"}
+    d = mgr.evaluate("lr", predicted_peak_temp=21.0, target_temp=22.0, q_solar=0.05, **kwargs)
+    assert d.changed is False
+    assert d.reason == "user_position_hold"
+
+
+def test_low_solar_retracts_when_owned():
+    """Low solar + predicted peak below threshold → retract owned covers."""
+    mgr = CoverManager()
+    state = mgr._get_state("lr")
+    state.current_position = 50
+    state.last_commanded_position = 50
+    state.owned = True
     kwargs = {k: v for k, v in _BASE_KWARGS.items() if k != "q_solar"}
     d = mgr.evaluate("lr", predicted_peak_temp=21.0, target_temp=22.0, q_solar=0.05, **kwargs)
     assert d.changed is True
@@ -1067,9 +1106,23 @@ def test_low_solar_retracts_when_no_solar_threat():
 
 
 def test_low_solar_retracts_evening():
-    """Evening: low solar, peak predicted below current temp → retract (room cooling)."""
+    """Evening: low solar, peak predicted below current temp → hold (unowned position)."""
     mgr = CoverManager()
     mgr._get_state("lr").current_position = 0
+    kwargs = {k: v for k, v in _BASE_KWARGS.items() if k not in ("q_solar", "current_temp")}
+    d = mgr.evaluate("lr", predicted_peak_temp=23.8, target_temp=22.0, q_solar=0.05, current_temp=24.0, **kwargs)
+    # peak=23.8 > 23.5 BUT peak=23.8 < current=24.0 → no solar threat → hold (unowned position)
+    assert d.changed is False
+    assert d.reason == "user_position_hold"
+
+
+def test_low_solar_retracts_evening_when_owned():
+    """Evening: low solar, peak predicted below current temp → retract owned covers."""
+    mgr = CoverManager()
+    state = mgr._get_state("lr")
+    state.current_position = 0
+    state.last_commanded_position = 0
+    state.owned = True
     kwargs = {k: v for k, v in _BASE_KWARGS.items() if k not in ("q_solar", "current_temp")}
     d = mgr.evaluate("lr", predicted_peak_temp=23.8, target_temp=22.0, q_solar=0.05, current_temp=24.0, **kwargs)
     # peak=23.8 > 23.5 BUT peak=23.8 < current=24.0 → no solar threat → retract
@@ -1105,12 +1158,29 @@ def test_low_solar_holds_open_covers_when_peak_predicted():
 
 @patch("custom_components.roommind.managers.cover_manager.time")
 def test_solar_not_gated_retracts_after_hold(mock_t):
-    """solar_gated=False, covers at 40%, hold time expired → retract to 100."""
+    """solar_gated=False, covers at 40% (unowned), hold time expired → hold."""
     mock_t.time.return_value = 1000.0
     mgr = CoverManager()
     # Start with covers at 40% and some change time in the past
     state = mgr._get_state("lr")
     state.current_position = 40
+    state.last_change_ts = 1000.0 - 1000  # 1000s ago, well past hold time
+
+    mock_t.time.return_value = 1000.0
+    d = mgr.evaluate("lr", predicted_peak_temp=25.0, target_temp=22.0, **{**_BASE_KWARGS, "solar_gated": False})
+    assert d.changed is False
+    assert d.reason == "user_position_hold"
+
+
+@patch("custom_components.roommind.managers.cover_manager.time")
+def test_solar_not_gated_retracts_after_hold_when_owned(mock_t):
+    """solar_gated=False, covers at 40% (owned), hold time expired → retract to 100."""
+    mock_t.time.return_value = 1000.0
+    mgr = CoverManager()
+    state = mgr._get_state("lr")
+    state.current_position = 40
+    state.last_commanded_position = 40
+    state.owned = True
     state.last_change_ts = 1000.0 - 1000  # 1000s ago, well past hold time
 
     mock_t.time.return_value = 1000.0
@@ -1122,11 +1192,27 @@ def test_solar_not_gated_retracts_after_hold(mock_t):
 
 @patch("custom_components.roommind.managers.cover_manager.time")
 def test_solar_not_gated_hold_active_no_retract(mock_t):
-    """solar_gated=False, within hold time → no change."""
+    """solar_gated=False, unowned position, within hold time → hold (ownership, not rate-limit)."""
     mock_t.time.return_value = 1000.0
     mgr = CoverManager()
     state = mgr._get_state("lr")
     state.current_position = 40
+    state.last_change_ts = 999.0  # 1s ago, well within hold time
+
+    d = mgr.evaluate("lr", predicted_peak_temp=25.0, target_temp=22.0, **{**_BASE_KWARGS, "solar_gated": False})
+    assert d.changed is False
+    assert d.reason == "user_position_hold"
+
+
+@patch("custom_components.roommind.managers.cover_manager.time")
+def test_solar_not_gated_hold_active_no_retract_when_owned(mock_t):
+    """solar_gated=False, owned position, within hold time → no change (rate-limited)."""
+    mock_t.time.return_value = 1000.0
+    mgr = CoverManager()
+    state = mgr._get_state("lr")
+    state.current_position = 40
+    state.last_commanded_position = 40
+    state.owned = True
     state.last_change_ts = 999.0  # 1s ago, well within hold time
 
     d = mgr.evaluate("lr", predicted_peak_temp=25.0, target_temp=22.0, **{**_BASE_KWARGS, "solar_gated": False})
@@ -1414,3 +1500,114 @@ def test_apply_change_records_travel_and_ownership(mock_t):
     assert state.owned is True
     assert state.travel_from == 100
     assert state.drift_latched is False
+
+
+# ── Ownership rule + baseline restore (#325) ───────────────────────────
+
+
+def test_deploy_never_opens_user_closed_cover():
+    """#325: blind closed by user (0%) must not be opened for shading."""
+    mgr = CoverManager()
+    mgr._get_state("lr").current_position = 0
+    d = mgr.evaluate("lr", predicted_peak_temp=23.2, target_temp=21.0, **_BASE_KWARGS)
+    assert d.changed is False
+    assert d.reason == "user_position_hold"
+    assert d.target_position == 0
+
+
+def test_deploy_closing_on_foreign_position_allowed_and_captures_baseline():
+    mgr = CoverManager()
+    mgr._get_state("lr").current_position = 50
+    d = mgr.evaluate("lr", predicted_peak_temp=25.0, target_temp=21.0, **_BASE_KWARGS)
+    assert d.changed is True
+    assert d.target_position < 50
+    assert mgr._get_state("lr").baseline_position == 50
+
+
+def test_snap_deploy_never_opens_user_closed_cover():
+    mgr = CoverManager()
+    mgr._get_state("lr").current_position = 0
+    kwargs = {**_BASE_KWARGS, "covers_min_position": 30}
+    d = mgr.evaluate("lr", covers_snap_deploy=True, predicted_peak_temp=25.0, target_temp=21.0, **kwargs)
+    assert d.changed is False
+    assert d.reason == "user_position_hold"
+
+
+@patch("custom_components.roommind.managers.cover_manager.time")
+def test_baseline_restore_full_episode(mock_t):
+    """Deploy from a user position (50) retracts back to 50, not 100."""
+    mgr = CoverManager()
+    mock_t.time.return_value = 1000.0
+    mgr.update_position("lr", 50)
+    d = mgr.evaluate("lr", predicted_peak_temp=25.0, target_temp=21.0, **_BASE_KWARGS)
+    assert d.changed is True and d.target_position < 50
+    mock_t.time.return_value = 2000.0
+    d = mgr.evaluate("lr", predicted_peak_temp=20.0, target_temp=21.0, **_BASE_KWARGS)
+    assert d.changed is True
+    assert d.target_position == 50
+    assert mgr._get_state("lr").baseline_position is None
+
+
+@patch("custom_components.roommind.managers.cover_manager.time")
+def test_baseline_is_openness_ceiling_during_episode(mock_t):
+    """Modulation within an episode never opens beyond the baseline."""
+    mgr = CoverManager()
+    mock_t.time.return_value = 1000.0
+    mgr.update_position("lr", 50)
+    mgr.evaluate("lr", predicted_peak_temp=25.0, target_temp=21.0, **_BASE_KWARGS)
+    mock_t.time.return_value = 2000.0
+    d = mgr.evaluate("lr", predicted_peak_temp=22.8, target_temp=21.0, **_BASE_KWARGS)
+    if d.changed:
+        assert d.target_position <= 50
+
+
+@patch("custom_components.roommind.managers.cover_manager.time")
+def test_forced_position_resets_baseline(mock_t):
+    mgr = CoverManager()
+    mock_t.time.return_value = 1000.0
+    mgr.update_position("lr", 50)
+    mgr.evaluate("lr", predicted_peak_temp=25.0, target_temp=21.0, **_BASE_KWARGS)
+    assert mgr._get_state("lr").baseline_position == 50
+    mock_t.time.return_value = 2000.0
+    kwargs = {**_BASE_KWARGS, "forced_position": 30, "forced_reason": "night_close"}
+    d = mgr.evaluate("lr", predicted_peak_temp=25.0, target_temp=21.0, **kwargs)
+    assert d.changed is True and d.target_position == 30
+    assert mgr._get_state("lr").baseline_position is None
+    assert mgr._get_state("lr").owned is True
+
+
+def test_restart_state_never_retracts_unknown_position():
+    """Fresh manager (post-restart): partially closed cover is left alone."""
+    mgr = CoverManager()
+    mgr.update_position("lr", 40)
+    kwargs = {**_BASE_KWARGS, "q_solar": 0.05}
+    d = mgr.evaluate("lr", predicted_peak_temp=21.0, target_temp=21.0, **kwargs)
+    assert d.changed is False
+    assert d.reason == "user_position_hold"
+
+
+@patch("custom_components.roommind.managers.cover_manager.time")
+def test_retract_within_deadband_ends_episode_without_command(mock_t):
+    mgr = CoverManager()
+    mock_t.time.return_value = 1000.0
+    state = mgr._get_state("lr")
+    state.current_position = 90
+    state.last_commanded_position = 90
+    state.owned = True
+    state.baseline_position = 100
+    kwargs = {**_BASE_KWARGS, "q_solar": 0.05}
+    d = mgr.evaluate("lr", predicted_peak_temp=21.0, target_temp=21.0, **kwargs)
+    assert d.changed is False
+    assert d.reason == "low_solar"
+    assert state.baseline_position is None
+
+
+@patch("custom_components.roommind.managers.cover_manager.time")
+def test_gate_retract_requires_ownership(mock_t):
+    mock_t.time.return_value = 1000.0
+    mgr = CoverManager()
+    mgr._get_state("lr").current_position = 40
+    kwargs = {**_BASE_KWARGS}
+    d = mgr.evaluate("lr", solar_gated=False, predicted_peak_temp=25.0, target_temp=21.0, **kwargs)
+    assert d.changed is False
+    assert d.reason == "user_position_hold"
