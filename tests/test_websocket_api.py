@@ -10,6 +10,7 @@ from custom_components.roommind.const import DOMAIN
 from custom_components.roommind.websocket_api import (
     _csv_to_points,
     _safe_float,
+    websocket_covers_clear_override,
     websocket_delete_room,
     websocket_get_analytics,
     websocket_get_diagnostics,
@@ -38,6 +39,7 @@ _thermal_reset = websocket_thermal_reset.__wrapped__
 _thermal_reset_all = websocket_thermal_reset_all.__wrapped__
 _get_analytics = websocket_get_analytics.__wrapped__
 _get_diagnostics = websocket_get_diagnostics.__wrapped__
+_covers_clear_override = websocket_covers_clear_override.__wrapped__
 
 
 @pytest.fixture
@@ -1664,14 +1666,14 @@ async def test_analytics_model_has_occupancy_sensors_false(ws_hass, store, conne
 
 
 def test_register_websocket_commands(hass):
-    """async_register_websocket_commands registers all 11 commands."""
+    """async_register_websocket_commands registers all 13 commands."""
     from unittest.mock import patch
 
     from custom_components.roommind.websocket_api import async_register_websocket_commands
 
     with patch("custom_components.roommind.websocket_api.websocket_api.async_register_command") as mock_reg:
         async_register_websocket_commands(hass)
-        assert mock_reg.call_count == 12
+        assert mock_reg.call_count == 13
 
 
 # ---------------------------------------------------------------------------
@@ -2686,3 +2688,27 @@ async def test_get_diagnostics_no_config_entry(ws_hass, store, connection):
 
     connection.send_error.assert_called_once()
     assert connection.send_error.call_args[0][1] == "not_found"
+
+
+@pytest.mark.asyncio
+async def test_covers_clear_override_unknown_room(ws_hass, store, connection):
+    await store.async_load()
+    msg = {"id": 7, "type": "roommind/covers/clear_override", "area_id": "nope"}
+    await _covers_clear_override(ws_hass, connection, msg)
+    connection.send_error.assert_called_once()
+    assert connection.send_error.call_args[0][1] == "not_found"
+
+
+@pytest.mark.asyncio
+async def test_covers_clear_override_success(ws_hass, store, connection):
+    await store.async_load()
+    await store.async_save_room("lr", {"covers": ["cover.lr"]})
+    coordinator = MagicMock()
+    coordinator.clear_cover_override = MagicMock()
+    coordinator.async_request_refresh = AsyncMock()
+    ws_hass.data[DOMAIN]["coordinator"] = coordinator
+    msg = {"id": 8, "type": "roommind/covers/clear_override", "area_id": "lr"}
+    await _covers_clear_override(ws_hass, connection, msg)
+    coordinator.clear_cover_override.assert_called_once_with("lr")
+    coordinator.async_request_refresh.assert_awaited_once()
+    connection.send_result.assert_called_once_with(8, {"success": True})

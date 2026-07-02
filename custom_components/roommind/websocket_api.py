@@ -905,6 +905,38 @@ async def websocket_get_diagnostics(
 
 
 # ---------------------------------------------------------------------------
+# Clear cover user override
+# ---------------------------------------------------------------------------
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "roommind/covers/clear_override",
+        vol.Required("area_id"): str,
+    }
+)
+@websocket_api.async_response
+async def websocket_covers_clear_override(
+    hass: HomeAssistant,
+    connection: ActiveConnection,
+    msg: dict,
+) -> None:
+    """Clear a user cover override so automatic cover control resumes."""
+    store = hass.data[DOMAIN]["store"]
+    area_id = msg["area_id"]
+    if store.get_room(area_id) is None:
+        connection.send_error(msg["id"], "not_found", f"Room '{area_id}' not found")
+        return
+
+    coordinator = _get_coordinator(hass)
+    if coordinator:
+        coordinator.clear_cover_override(area_id)
+        await coordinator.async_request_refresh()
+
+    connection.send_result(msg["id"], {"success": True})
+
+
+# ---------------------------------------------------------------------------
 # Registration
 # ---------------------------------------------------------------------------
 
@@ -924,3 +956,4 @@ def async_register_websocket_commands(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, websocket_thermal_reset_all)
     websocket_api.async_register_command(hass, websocket_boost_learning)
     websocket_api.async_register_command(hass, websocket_get_diagnostics)
+    websocket_api.async_register_command(hass, websocket_covers_clear_override)

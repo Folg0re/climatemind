@@ -94,6 +94,8 @@ def _build_cover_state(coordinator: Any, area_id: str) -> dict[str, Any] | None:
         "current_position": cs.current_position,
         "last_commanded_position": cs.last_commanded_position,
         "last_was_forced": cs.last_was_forced,
+        "owned": cs.owned,
+        "baseline_position": cs.baseline_position,
     }
     if cs.last_change_ts:
         result["last_change_ago_s"] = round(now - cs.last_change_ts)

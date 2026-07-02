@@ -382,6 +382,14 @@ class CoverOrchestrator:
         """Delegate to CoverManager.is_user_override_active."""
         return self._cover_manager.is_user_override_active(area_id)
 
+    def get_user_override_until(self, area_id: str) -> float | None:
+        """Delegate to CoverManager.get_user_override_until."""
+        return self._cover_manager.get_user_override_until(area_id)
+
+    def clear_user_override(self, area_id: str) -> None:
+        """Delegate to CoverManager.clear_user_override."""
+        self._cover_manager.clear_user_override(area_id)
+
     def remove_room(self, area_id: str) -> None:
         """Delegate to CoverManager.remove_room."""
         self._cover_manager.remove_room(area_id)

@@ -1204,6 +1204,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             "n_observations": self._model_manager.get_n_observations(area_id),
             "blind_position": (self._cover_orchestrator.get_current_position(area_id) if cover_eids else None),
             "cover_auto_paused": (self._cover_orchestrator.is_user_override_active(area_id) if cover_eids else False),
+            "cover_override_until": (self._cover_orchestrator.get_user_override_until(area_id) if cover_eids else None),
             "cover_reason": (cover_result.decision.reason if cover_eids else ""),
             "cover_forced_reason": (cover_result.forced_reason if cover_eids else ""),
             "active_cover_schedule_index": (cover_result.active_cover_schedule_index if cover_eids else -1),
@@ -1713,6 +1714,10 @@ class RoomMindCoordinator(DataUpdateCoordinator):
     def boost_learning(self, area_id: str) -> int:
         """Boost EKF covariance for a room. Returns n_observations."""
         return self._model_manager.boost_learning(area_id)
+
+    def clear_cover_override(self, area_id: str) -> None:
+        """Clear a user cover override so automatic cover control resumes."""
+        self._cover_orchestrator.clear_user_override(area_id)
 
     @property
     def history_store(self) -> HistoryStore | None:

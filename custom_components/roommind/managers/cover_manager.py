@@ -139,6 +139,18 @@ class CoverManager:
         """Return True if user manual override is currently active."""
         return self._get_state(area_id).user_override_until > time.time()
 
+    def get_user_override_until(self, area_id: str) -> float | None:
+        """Return the unix timestamp until which a user override is active, or None."""
+        until = self._get_state(area_id).user_override_until
+        return until if until > time.time() else None
+
+    def clear_user_override(self, area_id: str) -> None:
+        """End a user override pause so automatic control resumes next cycle."""
+        state = self._get_state(area_id)
+        state.user_override_until = 0.0
+        # Latch stays set: the still-present drift must not immediately re-arm the pause
+        state.drift_latched = True
+
     def evaluate(
         self,
         area_id: str,

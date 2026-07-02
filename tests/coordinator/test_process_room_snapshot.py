@@ -64,6 +64,7 @@ NORMAL_ROOM_KEYS = {
     "n_observations",
     "blind_position",
     "cover_auto_paused",
+    "cover_override_until",
     "cover_forced_reason",
     "cover_reason",
     "active_cover_schedule_index",

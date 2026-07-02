@@ -1611,3 +1611,38 @@ def test_gate_retract_requires_ownership(mock_t):
     d = mgr.evaluate("lr", solar_gated=False, predicted_peak_temp=25.0, target_temp=21.0, **kwargs)
     assert d.changed is False
     assert d.reason == "user_position_hold"
+
+
+# ── Override getters / clear ───────────────────────────────────────────
+
+
+@patch("custom_components.roommind.managers.cover_manager.time")
+def test_get_user_override_until_active_and_expired(mock_t):
+    mgr = CoverManager()
+    mock_t.time.return_value = 1000.0
+    assert mgr.get_user_override_until("lr") is None
+    mgr._get_state("lr").user_override_until = 4600.0
+    assert mgr.get_user_override_until("lr") == 4600.0
+    mock_t.time.return_value = 5000.0
+    assert mgr.get_user_override_until("lr") is None
+
+
+@patch("custom_components.roommind.managers.cover_manager.time")
+def test_clear_user_override_resumes_without_rearm(mock_t):
+    """Clearing the pause must not re-arm from the still-present drift."""
+    mgr = CoverManager()
+    state = mgr._get_state("lr")
+    state.last_commanded_position = 100
+    mock_t.time.return_value = 1000.0
+    mgr.update_position("lr", 100)
+    mock_t.time.return_value = 1030.0
+    mgr.update_position("lr", 0)
+    assert mgr.is_user_override_active("lr") is True
+    mgr.clear_user_override("lr")
+    assert mgr.is_user_override_active("lr") is False
+    mock_t.time.return_value = 1060.0
+    mgr.update_position("lr", 0)
+    assert mgr.is_user_override_active("lr") is False
+    mock_t.time.return_value = 1090.0
+    mgr.update_position("lr", 60)
+    assert mgr.is_user_override_active("lr") is True
