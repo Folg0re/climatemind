@@ -150,7 +150,11 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         # Startup guard: rooms with at least one valid temperature reading since
         # coordinator start. Full Control rooms send no device commands until then
         # (prevents the off/on bounce after HA restart while sensors are unavailable).
+        # Capped at MAX_SENSOR_STALENESS after start so a never-reporting sensor
+        # falls back to the same safety shutdown as a mid-operation dropout.
         self._had_valid_temp: set[str] = set()
+        self._startup_ts: float = time.monotonic()
+        self._startup_guard_warned: set[str] = set()
         self._switch_entity_areas: set[str] = set()
         self._climate_control_switch_areas: set[str] = set()
         self._binary_sensor_entity_areas: set[str] = set()
@@ -685,7 +689,21 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         climate_active = settings.get("climate_control_active", True) and room.get("climate_control_enabled", True)
         # Startup guard: Full Control room without any temperature reading yet —
         # leave devices in their current state instead of idling them.
-        waiting_for_data = has_external_sensor and area_id not in self._had_valid_temp
+        waiting_for_data = has_external_sensor and self._waiting_for_first_reading(area_id)
+        if (
+            climate_active
+            and has_external_sensor
+            and not waiting_for_data
+            and area_id not in self._had_valid_temp
+            and area_id not in self._startup_guard_warned
+        ):
+            self._startup_guard_warned.add(area_id)
+            _LOGGER.warning(
+                "Room '%s': no temperature reading within %ds after startup, "
+                "resuming control (devices stay off until the sensor reports)",
+                area_id,
+                MAX_SENSOR_STALENESS,
+            )
 
         # Read device temperature limits for dynamic boost targets
         trv_max_temps: list[float] = []
@@ -1620,6 +1638,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         self._previous_modes.pop(area_id, None)
         self._last_valid_temps.pop(area_id, None)
         self._had_valid_temp.discard(area_id)
+        self._startup_guard_warned.discard(area_id)
         self._ekf_training.remove_room(area_id)
         self._pending_predictions.pop(area_id, None)
         self._residual_tracker.remove_room(area_id)
@@ -1775,11 +1794,15 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             modes.append(commanded)
         return modes
 
+    def _waiting_for_first_reading(self, area_id: str) -> bool:
+        """True while a room has had no valid reading since startup, within the grace period."""
+        return area_id not in self._had_valid_temp and time.monotonic() - self._startup_ts < MAX_SENSOR_STALENESS
+
     def _any_member_room_waiting(self, members: list[str], rooms_config: dict[str, dict]) -> bool:
         """Return True when a Full Control member room has no temperature reading yet."""
         member_set = set(members)
         for area_id, room in rooms_config.items():
-            if not room.get("temperature_sensor") or area_id in self._had_valid_temp:
+            if not room.get("temperature_sensor") or not self._waiting_for_first_reading(area_id):
                 continue
             if room.get("is_outdoor", False) or not room.get("climate_control_enabled", True):
                 continue
