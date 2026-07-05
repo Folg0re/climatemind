@@ -374,6 +374,10 @@ class CoverManager:
         current = state.current_position
         target = state.baseline_position if state.baseline_position is not None else 100
         if current >= target or abs(target - current) <= COVER_POS_DEADBAND:
+            if state.baseline_position is not None:
+                # Episode ends at/near the user baseline without a command —
+                # hand the position back like the command-restore path below.
+                state.owned = False
             state.baseline_position = None
             return CoverDecision(target_position=current, changed=False, reason=hold_reason)
         if not state.owned:

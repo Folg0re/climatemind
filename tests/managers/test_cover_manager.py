@@ -1582,6 +1582,40 @@ def test_retract_relinquishes_ownership_after_baseline_restore(mock_t):
 
 
 @patch("custom_components.roommind.managers.cover_manager.time")
+def test_episode_ending_at_baseline_without_command_relinquishes_ownership(mock_t):
+    """#325: an episode that ends at the baseline via deploy modulation (no
+    retract command) must also relinquish ownership, so the next retract holds
+    the user position instead of auto-opening to 100."""
+    mgr = CoverManager()
+    mock_t.time.return_value = 1000.0
+    mgr.update_position("lr", 50)
+    d = mgr.evaluate("lr", predicted_peak_temp=25.0, target_temp=21.0, **_BASE_KWARGS)
+    assert d.changed is True and d.target_position == 0
+    state = mgr._get_state("lr")
+    assert state.baseline_position == 50
+
+    # weakening sun: modulation opens back to the baseline via the deploy path
+    mock_t.time.return_value = 1000.0 + COVER_MIN_HOLD_SECONDS + 1
+    d = mgr.evaluate("lr", predicted_peak_temp=23.0, target_temp=21.0, **_BASE_KWARGS)
+    assert d.changed is True
+    assert d.target_position == 50
+
+    # episode ends at the baseline without a command: ownership must be handed back
+    mock_t.time.return_value = 1000.0 + 2 * (COVER_MIN_HOLD_SECONDS + 1)
+    d = mgr.evaluate("lr", predicted_peak_temp=21.2, target_temp=21.0, **_BASE_KWARGS)
+    assert d.changed is False
+    assert state.baseline_position is None
+    assert state.owned is False
+
+    # next retract must HOLD at the user position, not auto-open to 100
+    mock_t.time.return_value = 1000.0 + 3 * (COVER_MIN_HOLD_SECONDS + 1)
+    d = mgr.evaluate("lr", predicted_peak_temp=20.0, target_temp=21.0, **_BASE_KWARGS)
+    assert d.changed is False
+    assert d.reason == "user_position_hold"
+    assert d.target_position == 50
+
+
+@patch("custom_components.roommind.managers.cover_manager.time")
 def test_baseline_is_openness_ceiling_during_episode(mock_t):
     """Modulation within an episode never opens beyond the baseline."""
     mgr = CoverManager()

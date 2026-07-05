@@ -919,6 +919,44 @@ async def test_list_rooms_includes_active_schedule_index(ws_hass, store, connect
 
 
 @pytest.mark.asyncio
+async def test_list_rooms_includes_cover_override_until(ws_hass, store, connection):
+    """Verify cover_override_until appears in live data from list_rooms."""
+    await store.async_load()
+
+    save_msg = {
+        "id": 2,
+        "type": "roommind/rooms/save",
+        "area_id": "schlafzimmer",
+        "thermostats": ["climate.sz_trv"],
+        "temperature_sensor": "sensor.sz_temp",
+        "covers": ["cover.sz_rollo"],
+    }
+    await _save_room(ws_hass, connection, save_msg)
+    connection.send_result.reset_mock()
+
+    mock_coordinator = MagicMock()
+    mock_coordinator.rooms = {
+        "schlafzimmer": {
+            "current_temp": 20.0,
+            "target_temp": 21.0,
+            "mode": "idle",
+            "cover_auto_paused": True,
+            "cover_override_until": 1751700000.0,
+        }
+    }
+    mock_coordinator.async_request_refresh = AsyncMock()
+    ws_hass.data[DOMAIN]["coordinator"] = mock_coordinator
+
+    list_msg = {"id": 3, "type": "roommind/rooms/list"}
+    await _list_rooms(ws_hass, connection, list_msg)
+
+    connection.send_result.assert_called_once()
+    live = connection.send_result.call_args[0][1]["rooms"]["schlafzimmer"]["live"]
+    assert live["cover_auto_paused"] is True
+    assert live["cover_override_until"] == 1751700000.0
+
+
+@pytest.mark.asyncio
 async def test_save_room_with_window_sensors(ws_hass, store, connection):
     """Saving a room with window_sensors persists them; default is empty list."""
     await store.async_load()
