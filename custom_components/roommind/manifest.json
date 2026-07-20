@@ -1,6 +1,6 @@
 {
-  "domain": "roommind",
-  "name": "RoomMind",
+  "domain": "climatemind",
+  "name": "climatemind",
   "codeowners": ["@snazzybean"],
   "config_flow": true,
   "dependencies": ["http", "frontend"],
