@@ -436,7 +436,7 @@ export class RsDeviceSection extends LitElement {
       this.hass?.devices,
     ).filter((e) => {
       const idAfterDot = e.entity_id.substring(e.entity_id.indexOf(".") + 1);
-      return !idAfterDot.startsWith("roommind_");
+      return !idAfterDot.startsWith("climatemind_");
     });
 
     const areaClimateEntities = allAreaEntities.filter((e) => e.entity_id.startsWith("climate."));
@@ -912,7 +912,7 @@ export class RsDeviceSection extends LitElement {
   private _entityFilter = (entity: { entity_id: string }): boolean => {
     const id = entity.entity_id;
     const idAfterDot = id.substring(id.indexOf(".") + 1);
-    if (idAfterDot.startsWith("roommind_")) return false;
+    if (idAfterDot.startsWith("climatemind_")) return false;
     if (this.devices.some((d) => d.entity_id === id)) return false;
     return id.startsWith("climate.");
   };

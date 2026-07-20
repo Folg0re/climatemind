@@ -23,7 +23,7 @@
       "label": "Test: Run with coverage",
       "type": "shell",
       "command": "${workspaceFolder}/.venv/bin/pytest",
-      "args": ["tests/", "--cov=custom_components/roommind", "--cov-report=html", "--cov-report=term-missing"],
+      "args": ["tests/", "--cov=custom_components/climatemind", "--cov-report=html", "--cov-report=term-missing"],
       "group": "test",
       "presentation": {
         "reveal": "always",

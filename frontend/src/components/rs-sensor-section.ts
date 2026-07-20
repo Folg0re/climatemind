@@ -499,7 +499,7 @@ export class RsSensorSection extends LitElement {
       this.hass?.devices,
     ).filter((e) => {
       const idAfterDot = e.entity_id.substring(e.entity_id.indexOf(".") + 1);
-      return !idAfterDot.startsWith("roommind_");
+      return !idAfterDot.startsWith("climatemind_");
     });
 
     const areaTempSensors = this.hass?.states
@@ -801,7 +801,7 @@ export class RsSensorSection extends LitElement {
   private _globalEntityFilter = (entity: { entity_id: string }): boolean => {
     const id = entity.entity_id;
     const idAfterDot = id.substring(id.indexOf(".") + 1);
-    if (idAfterDot.startsWith("roommind_")) return false;
+    if (idAfterDot.startsWith("climatemind_")) return false;
     if (this.temperatureSensor === id) return false;
     if (this.humiditySensor === id) return false;
     if (this.occupancySensors.has(id)) return false;

@@ -1,5 +1,5 @@
 /**
- * Shared utilities for reading and formatting RoomMind room state.
+ * Shared utilities for reading and formatting ClimateMind room state.
  */
 import type { HassDeviceRegistryEntry, HassEntityRegistryEntry, RoomMode } from "../types";
 import { localize, type TranslationKey } from "./localize";

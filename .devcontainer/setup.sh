@@ -1,12 +1,12 @@
 #!/bin/bash
 
-# RoomMind Devcontainer Setup Script
+# ClimateMind Devcontainer Setup Script
 
 set -e
 
-WORKSPACE="/workspaces/roommind"
+WORKSPACE="/workspaces/climatemind"
 
-echo "Setting up RoomMind development environment..."
+echo "Setting up ClimateMind development environment..."
 
 # ---------------------------------------------------------------------------
 # System packages
@@ -93,7 +93,7 @@ cp "${WORKSPACE}/.devcontainer/scenes.yaml"        /config/scenes.yaml
 
 # Symlink the custom component into HA
 echo "Linking custom component..."
-ln -sf "${WORKSPACE}/custom_components/roommind" /config/custom_components/roommind
+ln -sf "${WORKSPACE}/custom_components/climatemind" /config/custom_components/climatemind
 
 # ---------------------------------------------------------------------------
 # Pre-install HA component dependencies
@@ -149,8 +149,8 @@ echo "Custom components directory:"
 ls -la /config/custom_components/
 
 echo ""
-echo "RoomMind integration link:"
-ls -la /config/custom_components/roommind
+echo "ClimateMind integration link:"
+ls -la /config/custom_components/climatemind
 
 echo ""
 echo "Configuration file:"
@@ -169,8 +169,8 @@ print(f'  homeassistant {__version__}')
 import voluptuous
 print('  voluptuous OK')
 
-from custom_components.roommind import DOMAIN
-print(f'  roommind integration OK (domain={DOMAIN})')
+from custom_components.climatemind import DOMAIN
+print(f'  climatemind integration OK (domain={DOMAIN})')
 " || echo "Import check failed"
 
 echo ""
@@ -214,7 +214,7 @@ echo ""
 echo "Home Assistant will start automatically on every container start."
 echo ""
 echo "  Home Assistant: http://localhost:8123"
-echo "  Integration:    symlinked at /config/custom_components/roommind"
+echo "  Integration:    symlinked at /config/custom_components/climatemind"
 echo ""
 echo "  /config/restart_ha.sh   - restart HA"
 echo "  /config/logs.sh         - tail HA logs"

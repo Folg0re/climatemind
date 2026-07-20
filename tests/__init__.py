@@ -1,1 +1,1 @@
-"""Tests for the RoomMind integration."""
+"""Tests for the ClimateMind integration."""

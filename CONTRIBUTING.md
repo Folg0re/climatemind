@@ -1,4 +1,4 @@
-# Contributing to RoomMind
+# Contributing to ClimateMind
 
 Thanks for your interest in contributing! Here's how to get started.
 
@@ -27,7 +27,7 @@ npm run dev     # Dev server with hot reload
 npm run build   # Production build (TypeScript check + Vite bundle)
 ```
 
-The production build outputs to `custom_components/roommind/frontend/roommind-panel.js`.
+The production build outputs to `custom_components/climatemind/frontend/climatemind-panel.js`.
 
 ## Running Tests
 
@@ -58,7 +58,7 @@ tests/
 Coverage must stay ≥ 95% (enforced in CI). Check locally:
 
 ```bash
-.venv/bin/pytest tests/ --cov=custom_components/roommind --cov-report=term-missing
+.venv/bin/pytest tests/ --cov=custom_components/climatemind --cov-report=term-missing
 ```
 
 ## Code Style
@@ -102,4 +102,4 @@ chore: update dependencies
 
 ## Reporting Issues
 
-Use [GitHub Issues](https://github.com/snazzybean/roommind/issues) with the provided templates for bug reports and feature requests.
+Use [GitHub Issues](https://github.com/snazzybean/climatemind/issues) with the provided templates for bug reports and feature requests.

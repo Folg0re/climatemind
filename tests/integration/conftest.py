@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from custom_components.roommind.coordinator import RoomMindCoordinator
-from custom_components.roommind.store import RoomMindStore
+from custom_components.climatemind.coordinator import ClimateMindCoordinator
+from custom_components.climatemind.store import ClimateMindStore
 from tests.conftest import make_mock_states_get
 
 ROOM_LIVING = {
@@ -68,7 +68,7 @@ DEFAULT_SETTINGS = {"outdoor_temp_sensor": "sensor.outdoor_temp"}
 
 @pytest.fixture
 def real_store(hass):
-    s = RoomMindStore(hass)
+    s = ClimateMindStore(hass)
     s._store = AsyncMock()
     s._store.async_load = AsyncMock(return_value=None)
     s._store.async_save = AsyncMock()
@@ -87,7 +87,7 @@ async def setup_room(store, room=None, settings=None):
 
 @pytest.fixture
 def coordinator(hass, mock_config_entry, real_store):
-    hass.data = {"roommind": {"store": real_store}}
+    hass.data = {"climatemind": {"store": real_store}}
     hass.services.async_call = AsyncMock()
     hass.states.get = MagicMock(side_effect=make_hass_states())
     hass.config.latitude = 50.0
@@ -95,5 +95,5 @@ def coordinator(hass, mock_config_entry, real_store):
     hass.config.units = MagicMock()
     hass.config.units.temperature_unit = "°C"
     with patch("homeassistant.helpers.frame.report_usage"):
-        c = RoomMindCoordinator(hass, mock_config_entry)
+        c = ClimateMindCoordinator(hass, mock_config_entry)
     return c

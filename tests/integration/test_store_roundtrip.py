@@ -1,4 +1,4 @@
-"""Integration: store save/load round-trips with real RoomMindStore."""
+"""Integration: store save/load round-trips with real ClimateMindStore."""
 
 from __future__ import annotations
 

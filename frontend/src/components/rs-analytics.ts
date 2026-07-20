@@ -141,7 +141,7 @@ export class RsAnalytics extends LitElement {
 
   private _buildWsParams(): Record<string, unknown> {
     return {
-      type: "roommind/analytics/get",
+      type: "climatemind/analytics/get",
       area_id: this._selectedRoom,
       start_ts: this._rangeStart / 1000,
       end_ts: this._rangeEnd / 1000,
@@ -159,7 +159,7 @@ export class RsAnalytics extends LitElement {
       this._data = result;
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.debug("[RoomMind] fetchData:", err);
+      console.debug("[ClimateMind] fetchData:", err);
       this._data = null;
     } finally {
       this._loading = false;
@@ -174,7 +174,7 @@ export class RsAnalytics extends LitElement {
       this._chartAnchor = Date.now();
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.debug("[RoomMind] silentRefresh:", err);
+      console.debug("[ClimateMind] silentRefresh:", err);
     }
   }
 

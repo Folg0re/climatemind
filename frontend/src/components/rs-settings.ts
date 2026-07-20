@@ -1,5 +1,5 @@
 /**
- * rs-settings – Global RoomMind settings page (orchestrator).
+ * rs-settings – Global ClimateMind settings page (orchestrator).
  * Owns all state, loads/saves settings, delegates rendering to sub-components
  * wrapped in ha-expansion-panel accordion sections.
  */
@@ -83,7 +83,7 @@ export class RsSettings extends LitElement {
   private async _loadSettings() {
     try {
       const result = await this.hass.callWS<{ settings: GlobalSettings }>({
-        type: "roommind/settings/get",
+        type: "climatemind/settings/get",
       });
       const s = result.settings;
       this._groupByFloor = s.group_by_floor ?? false;
@@ -126,7 +126,7 @@ export class RsSettings extends LitElement {
       this._boostAppliedAt = s.boost_applied_at ?? {};
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.debug("[RoomMind] loadSettings:", err);
+      console.debug("[ClimateMind] loadSettings:", err);
     } finally {
       this._loaded = true;
     }
@@ -329,7 +329,7 @@ export class RsSettings extends LitElement {
 
     try {
       await this.hass.callWS({
-        type: "roommind/settings/save",
+        type: "climatemind/settings/save",
         group_by_floor: this._groupByFloor,
         climate_control_active: this._climateControlActive,
         learning_disabled_rooms: this._learningDisabledRooms,

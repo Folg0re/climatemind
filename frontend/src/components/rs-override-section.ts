@@ -385,7 +385,7 @@ export class RsOverrideSection extends LitElement {
     this._overrideError = "";
 
     const msg: Record<string, unknown> = {
-      type: "roommind/override/set",
+      type: "climatemind/override/set",
       area_id: this.config.area_id,
       override_type: pendingType,
       duration: hours,
@@ -416,7 +416,7 @@ export class RsOverrideSection extends LitElement {
 
     try {
       await this.hass.callWS({
-        type: "roommind/override/clear",
+        type: "climatemind/override/clear",
         area_id: this.config.area_id,
       });
       this._fireRoomUpdated();

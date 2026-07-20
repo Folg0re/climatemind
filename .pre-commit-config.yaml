@@ -13,7 +13,7 @@ repos:
         additional_dependencies: []
         args: [--config-file=pyproject.toml]
         pass_filenames: false
-        entry: mypy custom_components/roommind/
+        entry: mypy custom_components/climatemind/
 
   - repo: https://github.com/pre-commit/mirrors-prettier
     rev: v4.0.0-alpha.8

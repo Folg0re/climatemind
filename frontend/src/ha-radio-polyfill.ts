@@ -8,9 +8,9 @@
  * disappears, so option lists and settings toggles can no longer be chosen.
  *
  * This self-contained wrapper renders a native `<input type="radio">` and
- * preserves the small subset of the mwc-radio API that RoomMind uses
+ * preserves the small subset of the mwc-radio API that ClimateMind uses
  * (checked, value, name, disabled). It re-emits a composed `change` event so
- * existing `<ha-radio @change>` listeners keep working. Every RoomMind radio
+ * existing `<ha-radio @change>` listeners keep working. Every ClimateMind radio
  * is a controlled control — `checked` is driven from component state and a
  * selection flows back through events + re-render — so no cross-element
  * single-selection coordination is needed.

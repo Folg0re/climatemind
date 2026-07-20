@@ -1,0 +1,13 @@
+{
+  "domain": "climatemind",
+  "name": "climatemind",
+  "codeowners": ["@snazzybean"],
+  "config_flow": true,
+  "dependencies": ["http", "frontend"],
+  "documentation": "https://github.com/Folg0re/climatemind",
+  "integration_type": "hub",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/Folg0re/climatemind/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}

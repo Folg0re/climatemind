@@ -1,4 +1,4 @@
-"""Tests for RoomMind switch platform."""
+"""Tests for ClimateMind switch platform."""
 
 from __future__ import annotations
 
@@ -7,11 +7,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from custom_components.roommind.const import DOMAIN, VACATION_SENTINEL_UNTIL
-from custom_components.roommind.switch import (
-    RoomMindClimateControlSwitch,
-    RoomMindCoverAutoSwitch,
-    RoomMindVacationSwitch,
+from custom_components.climatemind.const import DOMAIN, VACATION_SENTINEL_UNTIL
+from custom_components.climatemind.switch import (
+    ClimateMindClimateControlSwitch,
+    ClimateMindCoverAutoSwitch,
+    ClimateMindVacationSwitch,
     _create_room_switches,
     async_setup_entry,
 )
@@ -24,7 +24,7 @@ def mock_coordinator():
     coordinator.hass = MagicMock()
     coordinator.async_request_refresh = AsyncMock()
     store = MagicMock()
-    coordinator.hass.data = {"roommind": {"store": store}}
+    coordinator.hass.data = {"climatemind": {"store": store}}
     return coordinator, store
 
 
@@ -32,7 +32,7 @@ def test_cover_auto_switch_is_on_reads_store(mock_coordinator):
     """Switch reads is_on from store, not coordinator data."""
     coordinator, store = mock_coordinator
     store.get_room.return_value = {"covers_auto_enabled": True}
-    switch = RoomMindCoverAutoSwitch(coordinator, "living_room")
+    switch = ClimateMindCoverAutoSwitch(coordinator, "living_room")
     assert switch.is_on is True
 
     store.get_room.return_value = {"covers_auto_enabled": False}
@@ -43,7 +43,7 @@ def test_cover_auto_switch_is_on_missing_room(mock_coordinator):
     """Switch returns False when room doesn't exist."""
     coordinator, store = mock_coordinator
     store.get_room.return_value = None
-    switch = RoomMindCoverAutoSwitch(coordinator, "nonexistent")
+    switch = ClimateMindCoverAutoSwitch(coordinator, "nonexistent")
     assert switch.is_on is False
 
 
@@ -52,7 +52,7 @@ async def test_cover_auto_switch_turn_on(mock_coordinator):
     """Turn on persists to store and refreshes coordinator."""
     coordinator, store = mock_coordinator
     store.async_update_room = AsyncMock()
-    switch = RoomMindCoverAutoSwitch(coordinator, "living_room")
+    switch = ClimateMindCoverAutoSwitch(coordinator, "living_room")
     await switch.async_turn_on()
     store.async_update_room.assert_awaited_once_with("living_room", {"covers_auto_enabled": True})
     coordinator.async_request_refresh.assert_awaited_once()
@@ -63,7 +63,7 @@ async def test_cover_auto_switch_turn_off(mock_coordinator):
     """Turn off persists to store and refreshes coordinator."""
     coordinator, store = mock_coordinator
     store.async_update_room = AsyncMock()
-    switch = RoomMindCoverAutoSwitch(coordinator, "living_room")
+    switch = ClimateMindCoverAutoSwitch(coordinator, "living_room")
     await switch.async_turn_off()
     store.async_update_room.assert_awaited_once_with("living_room", {"covers_auto_enabled": False})
     coordinator.async_request_refresh.assert_awaited_once()
@@ -72,9 +72,9 @@ async def test_cover_auto_switch_turn_off(mock_coordinator):
 def test_switch_unique_id_and_entity_id(mock_coordinator):
     """Switch has correct unique_id and entity_id."""
     coordinator, _ = mock_coordinator
-    switch = RoomMindCoverAutoSwitch(coordinator, "living_room")
-    assert switch.unique_id == "roommind_living_room_cover_auto"
-    assert switch.entity_id == "switch.roommind_living_room_cover_auto"
+    switch = ClimateMindCoverAutoSwitch(coordinator, "living_room")
+    assert switch.unique_id == "climatemind_living_room_cover_auto"
+    assert switch.entity_id == "switch.climatemind_living_room_cover_auto"
 
 
 def test_create_room_switches(mock_coordinator):
@@ -82,7 +82,7 @@ def test_create_room_switches(mock_coordinator):
     coordinator, _ = mock_coordinator
     switches = _create_room_switches(coordinator, "living_room")
     assert len(switches) == 1
-    assert isinstance(switches[0], RoomMindCoverAutoSwitch)
+    assert isinstance(switches[0], ClimateMindCoverAutoSwitch)
 
 
 @pytest.mark.asyncio
@@ -90,7 +90,7 @@ async def test_cover_auto_switch_turn_on_store_raises_keyerror(mock_coordinator)
     """Exception propagates when store raises KeyError for deleted room."""
     coordinator, store = mock_coordinator
     store.async_update_room = AsyncMock(side_effect=KeyError("nonexistent"))
-    switch = RoomMindCoverAutoSwitch(coordinator, "nonexistent")
+    switch = ClimateMindCoverAutoSwitch(coordinator, "nonexistent")
     with pytest.raises(KeyError):
         await switch.async_turn_on()
 
@@ -124,9 +124,9 @@ async def test_async_setup_entry_creates_entities_for_rooms_with_covers():
     async_add_entities.assert_called_once()
     entities = async_add_entities.call_args[0][0]
     assert len(entities) == 4
-    assert isinstance(entities[0], RoomMindVacationSwitch)
-    climate_switches = [e for e in entities if isinstance(e, RoomMindClimateControlSwitch)]
-    cover_switches = [e for e in entities if isinstance(e, RoomMindCoverAutoSwitch)]
+    assert isinstance(entities[0], ClimateMindVacationSwitch)
+    climate_switches = [e for e in entities if isinstance(e, ClimateMindClimateControlSwitch)]
+    cover_switches = [e for e in entities if isinstance(e, ClimateMindCoverAutoSwitch)]
     assert len(climate_switches) == 2
     assert len(cover_switches) == 1
     assert "living_room" in coordinator._switch_entity_areas
@@ -158,8 +158,8 @@ async def test_async_setup_entry_no_covers_still_creates_vacation_switch():
     async_add_entities.assert_called_once()
     entities = async_add_entities.call_args[0][0]
     assert len(entities) == 2
-    assert isinstance(entities[0], RoomMindVacationSwitch)
-    assert isinstance(entities[1], RoomMindClimateControlSwitch)
+    assert isinstance(entities[0], ClimateMindVacationSwitch)
+    assert isinstance(entities[1], ClimateMindClimateControlSwitch)
 
 
 @pytest.fixture
@@ -175,9 +175,9 @@ def mock_vacation_coordinator():
 def test_vacation_switch_unique_id_and_entity_id(mock_vacation_coordinator):
     """Vacation switch has correct unique_id and entity_id."""
     coordinator, _ = mock_vacation_coordinator
-    switch = RoomMindVacationSwitch(coordinator)
-    assert switch.unique_id == "roommind_vacation"
-    assert switch.entity_id == "switch.roommind_vacation"
+    switch = ClimateMindVacationSwitch(coordinator)
+    assert switch.unique_id == "climatemind_vacation"
+    assert switch.entity_id == "switch.climatemind_vacation"
     assert switch.icon == "mdi:beach"
     assert switch.name == "Vacation Mode"
 
@@ -186,7 +186,7 @@ def test_vacation_switch_is_on_active(mock_vacation_coordinator):
     """Vacation switch returns True when vacation_until is in the future."""
     coordinator, store = mock_vacation_coordinator
     store.get_settings.return_value = {"vacation_until": time.time() + 3600}
-    switch = RoomMindVacationSwitch(coordinator)
+    switch = ClimateMindVacationSwitch(coordinator)
     assert switch.is_on is True
 
 
@@ -194,7 +194,7 @@ def test_vacation_switch_is_on_expired(mock_vacation_coordinator):
     """Vacation switch returns False when vacation_until is in the past."""
     coordinator, store = mock_vacation_coordinator
     store.get_settings.return_value = {"vacation_until": time.time() - 3600}
-    switch = RoomMindVacationSwitch(coordinator)
+    switch = ClimateMindVacationSwitch(coordinator)
     assert switch.is_on is False
 
 
@@ -202,7 +202,7 @@ def test_vacation_switch_is_on_none(mock_vacation_coordinator):
     """Vacation switch returns False when vacation_until is None."""
     coordinator, store = mock_vacation_coordinator
     store.get_settings.return_value = {"vacation_until": None}
-    switch = RoomMindVacationSwitch(coordinator)
+    switch = ClimateMindVacationSwitch(coordinator)
     assert switch.is_on is False
 
 
@@ -210,7 +210,7 @@ def test_vacation_switch_is_on_missing_key(mock_vacation_coordinator):
     """Vacation switch returns False when vacation_until key is absent."""
     coordinator, store = mock_vacation_coordinator
     store.get_settings.return_value = {}
-    switch = RoomMindVacationSwitch(coordinator)
+    switch = ClimateMindVacationSwitch(coordinator)
     assert switch.is_on is False
 
 
@@ -220,7 +220,7 @@ async def test_vacation_switch_turn_on(mock_vacation_coordinator):
     coordinator, store = mock_vacation_coordinator
     store.get_settings.return_value = {"vacation_temp": 16.0}
     store.async_save_settings = AsyncMock()
-    switch = RoomMindVacationSwitch(coordinator)
+    switch = ClimateMindVacationSwitch(coordinator)
     await switch.async_turn_on()
     store.async_save_settings.assert_awaited_once_with(
         {
@@ -237,7 +237,7 @@ async def test_vacation_switch_turn_on_default_temp(mock_vacation_coordinator):
     coordinator, store = mock_vacation_coordinator
     store.get_settings.return_value = {}
     store.async_save_settings = AsyncMock()
-    switch = RoomMindVacationSwitch(coordinator)
+    switch = ClimateMindVacationSwitch(coordinator)
     await switch.async_turn_on()
     store.async_save_settings.assert_awaited_once_with(
         {
@@ -252,7 +252,7 @@ async def test_vacation_switch_turn_off(mock_vacation_coordinator):
     """Turn off clears vacation_until."""
     coordinator, store = mock_vacation_coordinator
     store.async_save_settings = AsyncMock()
-    switch = RoomMindVacationSwitch(coordinator)
+    switch = ClimateMindVacationSwitch(coordinator)
     await switch.async_turn_off()
     store.async_save_settings.assert_awaited_once_with({"vacation_until": None})
     coordinator.async_request_refresh.assert_awaited_once()
@@ -271,28 +271,28 @@ def mock_cc_coordinator():
 def test_climate_control_switch_default_on(mock_cc_coordinator):
     coordinator, store = mock_cc_coordinator
     store.get_room.return_value = {}
-    switch = RoomMindClimateControlSwitch(coordinator, "living_room")
+    switch = ClimateMindClimateControlSwitch(coordinator, "living_room")
     assert switch.is_on is True
 
 
 def test_climate_control_switch_off(mock_cc_coordinator):
     coordinator, store = mock_cc_coordinator
     store.get_room.return_value = {"climate_control_enabled": False}
-    switch = RoomMindClimateControlSwitch(coordinator, "living_room")
+    switch = ClimateMindClimateControlSwitch(coordinator, "living_room")
     assert switch.is_on is False
 
 
 def test_climate_control_switch_on_explicit(mock_cc_coordinator):
     coordinator, store = mock_cc_coordinator
     store.get_room.return_value = {"climate_control_enabled": True}
-    switch = RoomMindClimateControlSwitch(coordinator, "living_room")
+    switch = ClimateMindClimateControlSwitch(coordinator, "living_room")
     assert switch.is_on is True
 
 
 def test_climate_control_switch_room_missing(mock_cc_coordinator):
     coordinator, store = mock_cc_coordinator
     store.get_room.return_value = None
-    switch = RoomMindClimateControlSwitch(coordinator, "living_room")
+    switch = ClimateMindClimateControlSwitch(coordinator, "living_room")
     assert switch.is_on is True
 
 
@@ -300,7 +300,7 @@ def test_climate_control_switch_room_missing(mock_cc_coordinator):
 async def test_climate_control_switch_turn_on(mock_cc_coordinator):
     coordinator, store = mock_cc_coordinator
     store.async_update_room = AsyncMock()
-    switch = RoomMindClimateControlSwitch(coordinator, "living_room")
+    switch = ClimateMindClimateControlSwitch(coordinator, "living_room")
     await switch.async_turn_on()
     store.async_update_room.assert_awaited_once_with("living_room", {"climate_control_enabled": True})
     coordinator.async_request_refresh.assert_awaited_once()
@@ -310,7 +310,7 @@ async def test_climate_control_switch_turn_on(mock_cc_coordinator):
 async def test_climate_control_switch_turn_off(mock_cc_coordinator):
     coordinator, store = mock_cc_coordinator
     store.async_update_room = AsyncMock()
-    switch = RoomMindClimateControlSwitch(coordinator, "living_room")
+    switch = ClimateMindClimateControlSwitch(coordinator, "living_room")
     await switch.async_turn_off()
     store.async_update_room.assert_awaited_once_with("living_room", {"climate_control_enabled": False})
     coordinator.async_request_refresh.assert_awaited_once()
@@ -318,6 +318,6 @@ async def test_climate_control_switch_turn_off(mock_cc_coordinator):
 
 def test_climate_control_switch_unique_id_and_entity_id(mock_cc_coordinator):
     coordinator, _ = mock_cc_coordinator
-    switch = RoomMindClimateControlSwitch(coordinator, "living_room")
-    assert switch.unique_id == "roommind_living_room_climate_control"
-    assert switch.entity_id == "switch.roommind_living_room_climate_control"
+    switch = ClimateMindClimateControlSwitch(coordinator, "living_room")
+    assert switch.unique_id == "climatemind_living_room_climate_control"
+    assert switch.entity_id == "switch.climatemind_living_room_climate_control"

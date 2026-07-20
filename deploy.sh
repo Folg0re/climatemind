@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# RoomMind – Deploy to Home Assistant via SSH
+# ClimateMind – Deploy to Home Assistant via SSH
 #
 # Configuration (in order of priority):
 #   1. Command-line args:  ./deploy.sh 192.168.1.100 22
@@ -29,7 +29,7 @@ SSH_OPTS="-p ${SSH_PORT} -o StrictHostKeyChecking=no"
 [[ -n "${SSH_KEY:-}" ]] && SSH_OPTS="-i ${SSH_KEY} ${SSH_OPTS}"
 SSH_CMD="ssh ${SSH_OPTS}"
 
-echo "==> Deploying RoomMind to ${SSH_USER}@${HA_IP}:${SSH_PORT}"
+echo "==> Deploying ClimateMind to ${SSH_USER}@${HA_IP}:${SSH_PORT}"
 
 # 1. Build frontend
 echo "--- Building frontend ---"
@@ -44,14 +44,14 @@ echo "    OK"
 # 2. Deploy integration (backend + frontend bundle)
 echo "--- Deploying integration ---"
 ${SSH_CMD} "${SSH_USER}@${HA_IP}" \
-  "sudo mkdir -p ${REMOTE_CONFIG}/custom_components/roommind && \
-   sudo find ${REMOTE_CONFIG}/custom_components/roommind -name '__pycache__' -exec rm -rf {} + 2>/dev/null; true"
-tar czf - -C "${SCRIPT_DIR}/custom_components/roommind" . | \
-  ${SSH_CMD} "${SSH_USER}@${HA_IP}" "sudo tar xzf - -C ${REMOTE_CONFIG}/custom_components/roommind/"
+  "sudo mkdir -p ${REMOTE_CONFIG}/custom_components/climatemind && \
+   sudo find ${REMOTE_CONFIG}/custom_components/climatemind -name '__pycache__' -exec rm -rf {} + 2>/dev/null; true"
+tar czf - -C "${SCRIPT_DIR}/custom_components/climatemind" . | \
+  ${SSH_CMD} "${SSH_USER}@${HA_IP}" "sudo tar xzf - -C ${REMOTE_CONFIG}/custom_components/climatemind/"
 echo "    OK"
 
 echo ""
 echo "==> Done! Next steps:"
-echo "    - Python changes:        Settings → Integrations → RoomMind → ⋮ → Reload"
+echo "    - Python changes:        Settings → Integrations → ClimateMind → ⋮ → Reload"
 echo "    - Frontend changes:      Hard-refresh browser (Cmd+Shift+R / Ctrl+Shift+R)"
 echo "    - WS schema / manifest:  Full HA restart (Settings → System → Restart)"

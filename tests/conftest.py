@@ -1,4 +1,4 @@
-"""Fixtures for RoomMind tests."""
+"""Fixtures for ClimateMind tests."""
 
 from __future__ import annotations
 
@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from custom_components.roommind.control.mpc_controller import clear_command_cache
-from custom_components.roommind.store import RoomMindStore
+from custom_components.climatemind.control.mpc_controller import clear_command_cache
+from custom_components.climatemind.store import ClimateMindStore
 
 
 def make_mock_states_get(
@@ -170,8 +170,8 @@ def mock_config_entry():
 
 @pytest.fixture
 def store(hass):
-    """Return a RoomMindStore with mocked HA storage backend."""
-    s = RoomMindStore(hass)
+    """Return a ClimateMindStore with mocked HA storage backend."""
+    s = ClimateMindStore(hass)
     s._store = AsyncMock()
     s._store.async_load = AsyncMock(return_value=None)
     s._store.async_save = AsyncMock()

@@ -309,7 +309,7 @@ export class RsSettingsCompressor extends LitElement {
 
   private _memberFilter = (entity: { entity_id: string }): boolean => {
     const id = entity.entity_id;
-    if (id.substring(id.indexOf(".") + 1).startsWith("roommind_")) return false;
+    if (id.substring(id.indexOf(".") + 1).startsWith("climatemind_")) return false;
     for (const g of this.compressorGroups) {
       if (g.members.includes(id)) return false;
       if (g.master_entity === id) return false;
@@ -319,7 +319,7 @@ export class RsSettingsCompressor extends LitElement {
 
   private _masterFilter = (entity: { entity_id: string }): boolean => {
     const id = entity.entity_id;
-    if (id.substring(id.indexOf(".") + 1).startsWith("roommind_")) return false;
+    if (id.substring(id.indexOf(".") + 1).startsWith("climatemind_")) return false;
     for (const g of this.compressorGroups) {
       if (g.members.includes(id)) return false;
       if (g.master_entity === id) return false;

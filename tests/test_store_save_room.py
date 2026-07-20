@@ -1,4 +1,4 @@
-"""Snapshot tests for RoomMindStore.async_save_room.
+"""Snapshot tests for ClimateMindStore.async_save_room.
 
 Captures exact device sync behavior to prevent regressions during store refactoring.
 """

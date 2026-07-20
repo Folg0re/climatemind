@@ -1,0 +1,26 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "ClimateMind",
+        "description": "ClimateMind für die Raumklimasteuerung einrichten. Räume werden nach dem Setup im ClimateMind-Panel konfiguriert."
+      }
+    },
+    "abort": {
+      "already_configured": "ClimateMind ist bereits konfiguriert."
+    }
+  },
+  "issues": {
+    "restart_required": {
+      "title": "Neustart erforderlich",
+      "fix_flow": {
+        "step": {
+          "confirm_restart": {
+            "title": "Home Assistant neu starten?",
+            "description": "ClimateMind {version} wurde installiert, aber Home Assistant läuft noch mit einer älteren Version. Neustart zum Abschließen des Updates."
+          }
+        }
+      }
+    }
+  }
+}

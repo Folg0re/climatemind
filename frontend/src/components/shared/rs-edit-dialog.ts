@@ -240,7 +240,7 @@ export class RsEditDialog extends LitElement {
     // dialog manager (read as `e.detail.dialog`). A composed event of that name
     // with a null detail bubbles up to <home-assistant> and crashes HA's
     // handler ("can't access property 'dialog', e.detail is null"), which broke
-    // the room edit dialogs after HA 2026's dialog rework. Use a RoomMind-
+    // the room edit dialogs after HA 2026's dialog rework. Use a ClimateMind-
     // specific name so it can never collide with HA's listener.
     this.dispatchEvent(new CustomEvent("rs-dialog-closed", { bubbles: true, composed: true }));
   }

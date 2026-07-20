@@ -1,5 +1,5 @@
 {
-  "name": "RoomMind Development",
+  "name": "ClimateMind Development",
   "image": "mcr.microsoft.com/devcontainers/python:3.14-bookworm",
   "forwardPorts": [8123],
   "portsAttributes": {
@@ -11,7 +11,7 @@
   "containerEnv": {
     "TZ": "Europe/Berlin"
   },
-  "mounts": ["source=roommind-ha-config,target=/config,type=volume"],
+  "mounts": ["source=climatemind-ha-config,target=/config,type=volume"],
   "postCreateCommand": "bash .devcontainer/setup.sh",
   "postStartCommand": "bash /config/start_ha.sh",
   "remoteUser": "vscode",

@@ -7,7 +7,7 @@
  * show, the input itself is invisible.
  *
  * This wrapper preserves the small subset of the mwc-textfield API that
- * RoomMind uses (value, label, placeholder, type, min/max/step, suffix,
+ * ClimateMind uses (value, label, placeholder, type, min/max/step, suffix,
  * disabled) and forwards everything to `<ha-input>`. It is registered
  * conditionally in `load-ha-elements.ts`, only when `ha-textfield` is
  * missing AND `ha-input` is available, so older HA versions keep using

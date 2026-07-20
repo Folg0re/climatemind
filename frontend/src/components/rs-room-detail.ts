@@ -32,7 +32,7 @@ import { resolveHeatingSystemType } from "../utils/device-utils";
 import type { RsOverrideSection } from "./rs-override-section";
 
 const CONTROL_DOCS_URL =
-  "https://github.com/snazzybean/roommind/blob/main/docs/control-and-devices.md";
+  "https://github.com/snazzybean/climatemind/blob/main/docs/control-and-devices.md";
 
 type EditableSection = "schedule" | "devices" | "sensors" | "presence" | "covers" | "heatSource";
 
@@ -1026,7 +1026,7 @@ export class RsRoomDetail extends LitElement {
     this._optimisticCoverResume = true;
     try {
       await this.hass.callWS({
-        type: "roommind/covers/clear_override",
+        type: "climatemind/covers/clear_override",
         area_id: this.area.area_id,
       });
     } catch {
@@ -1078,7 +1078,7 @@ export class RsRoomDetail extends LitElement {
 
     try {
       await this.hass.callWS({
-        type: "roommind/rooms/save",
+        type: "climatemind/rooms/save",
         area_id: this.area.area_id,
         devices: this._devices,
         temperature_sensor: this._selectedTempSensor,

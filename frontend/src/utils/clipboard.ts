@@ -24,7 +24,7 @@ function copyToClipboardFallback(text: string): boolean {
     ok = document.execCommand("copy");
   } catch (err) {
     // eslint-disable-next-line no-console
-    console.debug("[RoomMind] clipboard fallback:", err);
+    console.debug("[ClimateMind] clipboard fallback:", err);
   }
   document.body.removeChild(ta);
   return ok;

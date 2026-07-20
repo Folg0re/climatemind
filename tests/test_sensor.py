@@ -6,10 +6,10 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from custom_components.roommind.const import DOMAIN
-from custom_components.roommind.sensor import (
-    RoomMindModeSensor,
-    RoomMindTargetTemperatureSensor,
+from custom_components.climatemind.const import DOMAIN
+from custom_components.climatemind.sensor import (
+    ClimateMindModeSensor,
+    ClimateMindTargetTemperatureSensor,
     _create_room_entities,
     async_setup_entry,
 )
@@ -88,57 +88,57 @@ def test_create_room_entities():
     coordinator = _make_coordinator()
     entities = _create_room_entities(coordinator, "room_a")
     assert len(entities) == 2
-    assert isinstance(entities[0], RoomMindTargetTemperatureSensor)
-    assert isinstance(entities[1], RoomMindModeSensor)
+    assert isinstance(entities[0], ClimateMindTargetTemperatureSensor)
+    assert isinstance(entities[1], ClimateMindModeSensor)
 
 
 def test_target_temp_sensor_value():
     """Target temperature sensor returns value from room data."""
     coordinator = _make_coordinator({"room_a": {"target_temp": 21.5}})
-    sensor = RoomMindTargetTemperatureSensor(coordinator, "room_a")
+    sensor = ClimateMindTargetTemperatureSensor(coordinator, "room_a")
     assert sensor.native_value == 21.5
 
 
 def test_target_temp_sensor_missing_room():
     """Target temperature sensor returns None when room is missing."""
     coordinator = _make_coordinator({})
-    sensor = RoomMindTargetTemperatureSensor(coordinator, "room_a")
+    sensor = ClimateMindTargetTemperatureSensor(coordinator, "room_a")
     assert sensor.native_value is None
 
 
 def test_target_temp_sensor_missing_key():
     """Target temperature sensor returns None when key is missing."""
     coordinator = _make_coordinator({"room_a": {"mode": "idle"}})
-    sensor = RoomMindTargetTemperatureSensor(coordinator, "room_a")
+    sensor = ClimateMindTargetTemperatureSensor(coordinator, "room_a")
     assert sensor.native_value is None
 
 
 def test_mode_sensor_value():
     """Mode sensor returns value from room data."""
     coordinator = _make_coordinator({"room_a": {"mode": "heating"}})
-    sensor = RoomMindModeSensor(coordinator, "room_a")
+    sensor = ClimateMindModeSensor(coordinator, "room_a")
     assert sensor.native_value == "heating"
 
 
 def test_mode_sensor_defaults_to_idle():
     """Mode sensor defaults to 'idle' when key is missing."""
     coordinator = _make_coordinator({"room_a": {"target_temp": 21.0}})
-    sensor = RoomMindModeSensor(coordinator, "room_a")
+    sensor = ClimateMindModeSensor(coordinator, "room_a")
     assert sensor.native_value == "idle"
 
 
 def test_mode_sensor_missing_room():
     """Mode sensor returns 'idle' when room is missing."""
     coordinator = _make_coordinator({})
-    sensor = RoomMindModeSensor(coordinator, "room_a")
+    sensor = ClimateMindModeSensor(coordinator, "room_a")
     assert sensor.native_value == "idle"
 
 
 def test_sensor_unique_id():
     """Sensors have correct unique_id format."""
     coordinator = _make_coordinator()
-    temp_sensor = RoomMindTargetTemperatureSensor(coordinator, "room_a")
-    mode_sensor = RoomMindModeSensor(coordinator, "room_a")
+    temp_sensor = ClimateMindTargetTemperatureSensor(coordinator, "room_a")
+    mode_sensor = ClimateMindModeSensor(coordinator, "room_a")
     assert temp_sensor.unique_id == f"{DOMAIN}_room_a_target_temp"
     assert mode_sensor.unique_id == f"{DOMAIN}_room_a_mode"
 
@@ -146,7 +146,7 @@ def test_sensor_unique_id():
 def test_sensor_entity_id():
     """Sensors have correct entity_id format."""
     coordinator = _make_coordinator()
-    temp_sensor = RoomMindTargetTemperatureSensor(coordinator, "room_a")
-    mode_sensor = RoomMindModeSensor(coordinator, "room_a")
+    temp_sensor = ClimateMindTargetTemperatureSensor(coordinator, "room_a")
+    mode_sensor = ClimateMindModeSensor(coordinator, "room_a")
     assert temp_sensor.entity_id == f"sensor.{DOMAIN}_room_a_target_temp"
     assert mode_sensor.entity_id == f"sensor.{DOMAIN}_room_a_mode"

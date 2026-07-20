@@ -264,13 +264,13 @@ export class RsAnalyticsToolbar extends LitElement {
     this._openDropdown = null;
     try {
       const result = await this.hass.callWS<Record<string, unknown>>({
-        type: "roommind/diagnostics/get",
+        type: "climatemind/diagnostics/get",
       });
       const json = JSON.stringify(result, null, 2);
-      downloadString(json, "roommind_diagnostics.json", "application/json");
+      downloadString(json, "climatemind_diagnostics.json", "application/json");
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.warn("[RoomMind] diagnostics export failed:", err);
+      console.warn("[ClimateMind] diagnostics export failed:", err);
     } finally {
       this._diagLoading = false;
     }
@@ -290,13 +290,13 @@ export class RsAnalyticsToolbar extends LitElement {
     this._openDropdown = null;
     try {
       const result = await this.hass.callWS<Record<string, unknown>>({
-        type: "roommind/diagnostics/get",
+        type: "climatemind/diagnostics/get",
       });
       const json = JSON.stringify(result, null, 2);
       copyToClipboard(json);
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.warn("[RoomMind] diagnostics clipboard failed:", err);
+      console.warn("[ClimateMind] diagnostics clipboard failed:", err);
     } finally {
       this._diagLoading = false;
     }

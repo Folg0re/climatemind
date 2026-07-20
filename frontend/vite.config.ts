@@ -5,11 +5,11 @@ export default defineConfig({
   build: {
     lib: {
       entry: resolve(__dirname, "src/main.ts"),
-      name: "RoomMindPanel",
+      name: "ClimateMindPanel",
       formats: ["iife"],
-      fileName: () => "roommind-panel.js",
+      fileName: () => "climatemind-panel.js",
     },
-    outDir: "../custom_components/roommind/frontend",
+    outDir: "../custom_components/climatemind/frontend",
     emptyOutDir: false,
     rollupOptions: {
       // No external dependencies – everything is bundled

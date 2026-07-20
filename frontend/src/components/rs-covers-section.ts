@@ -408,7 +408,7 @@ export class RsCoverSection extends LitElement {
 
   private _entityFilter = (entity: { entity_id: string }): boolean => {
     const id = entity.entity_id;
-    if (id.startsWith("cover.roommind_")) return false;
+    if (id.startsWith("cover.climatemind_")) return false;
     return id.startsWith("cover.") && !this.selectedCovers.has(id);
   };
 
@@ -514,14 +514,14 @@ export class RsCoverSection extends LitElement {
 
   private _renderEdit(l: string) {
     // Discover cover entities in this area
-    // Exclude RoomMind's own entities to prevent self-assignment (#86)
+    // Exclude ClimateMind's own entities to prevent self-assignment (#86)
     const allAreaEntities = getEntitiesForArea(
       this.area.area_id,
       this.hass?.entities,
       this.hass?.devices,
     ).filter((e) => {
       const idAfterDot = e.entity_id.substring(e.entity_id.indexOf(".") + 1);
-      return !idAfterDot.startsWith("roommind_");
+      return !idAfterDot.startsWith("climatemind_");
     });
     const areaCoverEntities = allAreaEntities.filter((e) => e.entity_id.startsWith("cover."));
     const areaCoverIds = new Set(areaCoverEntities.map((e) => e.entity_id));

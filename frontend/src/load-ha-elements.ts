@@ -21,7 +21,7 @@ export const loadHaElements = async (): Promise<void> => {
     } catch (err) {
       // A failed polyfill load (chunk/network error) must not abort the rest
       // of element initialisation below — radios degrade, panel survives.
-      console.warn("RoomMind: ha-radio polyfill failed to load", err);
+      console.warn("ClimateMind: ha-radio polyfill failed to load", err);
     }
   }
 
@@ -43,7 +43,7 @@ export const loadHaElements = async (): Promise<void> => {
     } catch (err) {
       // As above: don't let a polyfill load failure block entity-picker /
       // chart-base setup. Text fields degrade, the rest of the panel loads.
-      console.warn("RoomMind: ha-textfield polyfill failed to load", err);
+      console.warn("ClimateMind: ha-textfield polyfill failed to load", err);
     }
   }
 

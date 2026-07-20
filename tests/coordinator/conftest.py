@@ -52,11 +52,11 @@ def _make_store_mock(rooms=None, settings=None):
 
 
 def _create_coordinator(hass, mock_config_entry):
-    """Create a RoomMindCoordinator with frame.report_usage patched out."""
-    from custom_components.roommind.coordinator import RoomMindCoordinator
+    """Create a ClimateMindCoordinator with frame.report_usage patched out."""
+    from custom_components.climatemind.coordinator import ClimateMindCoordinator
 
     with patch("homeassistant.helpers.frame.report_usage"):
-        coordinator = RoomMindCoordinator(hass, mock_config_entry)
+        coordinator = ClimateMindCoordinator(hass, mock_config_entry)
     return coordinator
 
 

@@ -52,9 +52,9 @@ export function buildExportFilename(
     .replace(/\s+/g, "_")
     .toLowerCase();
   if (suffix) {
-    return `roommind_${suffix}_${name}.${ext}`;
+    return `climatemind_${suffix}_${name}.${ext}`;
   }
   const from = new Date(rangeStart).toISOString().slice(0, 10);
   const to = new Date(rangeEnd).toISOString().slice(0, 10);
-  return `roommind_${name}_${from}_${to}.${ext}`;
+  return `climatemind_${name}_${from}_${to}.${ext}`;
 }

@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from custom_components.roommind.repairs import (
+from custom_components.climatemind.repairs import (
     RestartRequiredFixFlow,
     async_create_fix_flow,
 )
