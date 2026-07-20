@@ -23,6 +23,7 @@ from ..const import (
     DEFAULT_COMFORT_WEIGHT,
     DEFAULT_OUTDOOR_COOLING_MIN,
     DEFAULT_OUTDOOR_HEATING_MAX,
+    DOMAIN,
     HEATING_BOOST_TARGET,
     MODE_COOLING,
     MODE_HEATING,
@@ -809,7 +810,38 @@ class MPCController:
             q_occupancy=self.q_occupancy,
         )
         if pred_std < MPC_MAX_PREDICTION_STD and self._has_enough_data(can_heat, can_cool):
-            return self._evaluate_mpc(current_temp, targets)
+            # Compute horizon blocks so we can optionally request a forecast
+            horizon_target = targets.heat if targets.heat is not None else targets.cool
+            horizon_blocks = self._compute_horizon_blocks(model, current_temp, horizon_target)
+
+            # Non-destructive forecast integration: try to obtain an hourly
+            # temperature horizon from the ForecastFeeder and expand it to
+            # block-level series. If anything fails, fall back to existing
+            # behaviour (_build_outdoor_series).
+            outdoor_override = None
+            try:
+                feeder = self.hass.data.get(DOMAIN, {}).get("forecast_feeder")
+                if feeder is not None:
+                    hours = math.ceil(horizon_blocks * PLAN_DT_MINUTES / 60)
+                    temps = await feeder.async_get_temperature_horizon(hours)
+                    if temps:
+                        blocks_per_hour = 60 // PLAN_DT_MINUTES
+                        series: list[float] = []
+                        for t in temps:
+                            series.extend([float(t)] * blocks_per_hour)
+                        # Prefer real-time sensor for the very first block
+                        if self.outdoor_temp is not None and series:
+                            series[0] = self.outdoor_temp
+                        # Pad if forecast shorter than horizon
+                        while len(series) < horizon_blocks:
+                            series.append(series[-1] if series else (self.outdoor_temp or 0.0))
+                        outdoor_override = series[:horizon_blocks]
+            except Exception:  # noqa: BLE001
+                _LOGGER.debug(
+                    "ForecastFeeder integration failed, falling back to default outdoor series", exc_info=True
+                )
+
+            return self._evaluate_mpc(current_temp, targets, outdoor_override=outdoor_override)
         # Bang-bang fallback: binary control (1.0 power) for fast EKF learning
         mode = self._evaluate_bangbang(current_temp, targets)
         return mode, 1.0 if mode != MODE_IDLE else 0.0
@@ -859,6 +891,7 @@ class MPCController:
         self,
         current_temp: float | None,
         targets: TargetTemps,
+        outdoor_override: list[float] | None = None,
     ) -> tuple[str, float]:
         """MPC evaluation — use optimizer to determine action and power fraction."""
         if current_temp is None or (targets.heat is None and targets.cool is None):
@@ -871,8 +904,13 @@ class MPCController:
         horizon_target = targets.heat if targets.heat is not None else targets.cool
         horizon_blocks = self._compute_horizon_blocks(model, current_temp, horizon_target)
 
-        # Build outdoor series from forecast or current temp
-        outdoor_series = self._build_outdoor_series(horizon_blocks)
+        # Build outdoor series from forecast override if provided, otherwise
+        # use existing forecast->block expansion. This keeps the change
+        # non-destructive to callers that don't provide an override.
+        if outdoor_override is not None:
+            outdoor_series = outdoor_override[:horizon_blocks]
+        else:
+            outdoor_series = self._build_outdoor_series(horizon_blocks)
 
         # Build solar series from forecast cloud coverage
         solar_series = self._build_solar_series(horizon_blocks)
@@ -935,6 +973,50 @@ class MPCController:
             occupancy_series=occupancy_series,
         )
         self.last_plan = plan
+
+        # Metrics/logging: compare decision with/without forecast override
+        try:
+            if outdoor_override is not None:
+                # Compute fallback plan using default expansion (no override)
+                fallback_series = self._build_outdoor_series(horizon_blocks)
+                plan_no = optimizer.optimize(
+                    T_room=current_temp,
+                    T_outdoor_series=fallback_series,
+                    heat_target_series=heat_target_series,
+                    cool_target_series=cool_target_series,
+                    dt_minutes=PLAN_DT_MINUTES,
+                    solar_series=solar_series,
+                    residual_series=residual_series,
+                    occupancy_series=occupancy_series,
+                )
+                a_with = plan.get_current_action()
+                pf_with = plan.get_current_power_fraction()
+                a_without = plan_no.get_current_action()
+                pf_without = plan_no.get_current_power_fraction()
+                # Store a lightweight metric in hass.data for observability
+                metrics = self.hass.data.setdefault(DOMAIN, {}).setdefault(
+                    "mpc_forecast_metrics", {"total": 0, "diffs": 0}
+                )
+                metrics["total"] += 1
+                if a_with != a_without or abs(pf_with - pf_without) > 0.01:
+                    metrics["diffs"] += 1
+                    _LOGGER.info(
+                        "MPC forecast changed decision for %s: with=%s/%.2f without=%s/%.2f",
+                        self._area_id,
+                        a_with,
+                        pf_with,
+                        a_without,
+                        pf_without,
+                    )
+                else:
+                    _LOGGER.debug(
+                        "MPC forecast had no effect for %s: action=%s pf=%.2f",
+                        self._area_id,
+                        a_with,
+                        pf_with,
+                    )
+        except Exception:  # noqa: BLE001
+            _LOGGER.debug("Failed to compute MPC forecast-vs-no-forecast metrics", exc_info=True)
 
         action = plan.get_current_action()
         power_fraction = plan.get_current_power_fraction()

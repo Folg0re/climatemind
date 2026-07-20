@@ -35,6 +35,8 @@ async def async_setup_entry(
         if room.get("covers"):
             entities.extend(_create_room_binary_sensors(coordinator, area_id))
             coordinator._binary_sensor_entity_areas.add(area_id)
+    # Global central heating availability sensor
+    entities.append(ClimateMindCentralHeatAvailableSensor(coordinator))
     if entities:
         async_add_entities(entities)
 
@@ -59,3 +61,26 @@ class ClimateMindCoverPausedSensor(CoordinatorEntity, BinarySensorEntity):
             return False
         room = self.coordinator.data.get("rooms", {}).get(self._area_id)
         return bool(room.get("cover_auto_paused", False)) if room else False
+
+
+class ClimateMindCentralHeatAvailableSensor(CoordinatorEntity, BinarySensorEntity):
+    """Global binary sensor exposing whether central heat is available now."""
+
+    _attr_has_entity_name = True
+
+    def __init__(self, coordinator: ClimateMindCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{DOMAIN}_central_heat_available_now"
+        self._attr_name = "Calore disponibile ora"
+        self._attr_icon = "mdi:radiator"
+        self.entity_id = f"binary_sensor.{DOMAIN}_central_heat_available_now"
+
+    @property
+    def is_on(self) -> bool:
+        """Return True when central heating manager reports availability."""
+        manager = getattr(self.coordinator, "central_heating", None)
+        if manager is None:
+            manager = self.hass.data.get(DOMAIN, {}).get("central_heating")
+        if manager is None:
+            return False
+        return bool(manager.is_heat_available_now())
