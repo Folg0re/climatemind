@@ -9,7 +9,7 @@
 
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/Y8Y31VP2VK)
 
-**Intelligent room climate control for Home Assistant** - self-learning thermal model, proportional valve control, and a dedicated management panel.
+**Intelligent room climate control for Home Assistant** - self-learning MPC, solar gain modeling, central heating management
 
 ![Dashboard](docs/images/page-dashboard.png)
 
