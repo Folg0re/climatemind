@@ -1,0 +1,25 @@
+services:
+  set_offset:
+    description: "Set calibration offset for an area or all areas"
+    fields:
+      area_id:
+        description: "Area id or 'all' to apply to all rooms"
+        example: "living_room"
+      offset:
+        description: "Offset in degrees Celsius"
+        example: 1.5
+      duration:
+        description: "Optional duration in minutes for temporary offset"
+        example: 120
+  apply_scene:
+    description: "Activate a predefined scene"
+    fields:
+      scene_id:
+        description: "Scene identifier"
+        example: "vacation"
+  set_global_mode:
+    description: "Set global thermostat mode"
+    fields:
+      mode:
+        description: "Mode name (e.g. per_room, global_only)"
+        example: "global_only"
