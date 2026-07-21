@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import logging
+import os
 
 from homeassistant.components.frontend import async_register_built_in_panel
+from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.typing import ConfigType
@@ -61,6 +63,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data[DOMAIN]["scene_engine"] = scene_engine
     hass.data[DOMAIN]["forecast_feeder"] = forecast_feeder
 
+    # 1. Registriamo la cartella frontend come percorso statico HTTP
+    frontend_path = os.path.join(os.path.dirname(__file__), "frontend")
+    await hass.http.async_register_static_paths(
+        [
+            StaticPathConfig(
+                url_path="/climatemind_static",
+                path=frontend_path,
+                cache_headers=False,
+            )
+        ]
+    )
+
     try:
         async_register_built_in_panel(
             hass,
@@ -73,7 +87,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     "name": "climatemind-panel",
                     "embed_iframe": False,
                     "trust_external": False,
-                    "js_url": "/api/hassio_ingress/none/climatemind-panel.js",
+                    # 2. Puntiamo al nuovo URL statico locale anziché a Ingress
+                    "js_url": "/climatemind_static/climatemind-panel.js",
                 }
             },
         )
