@@ -245,6 +245,7 @@ class ClimateMindStore:
             "comfort_cool": config.get("comfort_cool", DEFAULT_COMFORT_COOL),
             "eco_heat": eco_heat,
             "eco_cool": config.get("eco_cool", DEFAULT_ECO_COOL),
+            "calibration_offset": config.get("calibration_offset", 0.0)
             "presence_persons": config.get("presence_persons", []),
             "display_name": config.get("display_name", ""),
             "heating_system_type": config.get("heating_system_type", ""),
