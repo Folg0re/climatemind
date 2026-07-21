@@ -1,4 +1,4 @@
-import { LitElement, html, css, nothing } from "lit";
+import { html, LitElement, css, nothing } from "lit";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { customElement, property, state } from "lit/decorators.js";
 import type {
@@ -61,6 +61,7 @@ export class RsRoomDetail extends LitElement {
   @state() private _comfortCool = 24.0;
   @state() private _ecoHeat = 17.0;
   @state() private _ecoCool = 27.0;
+  @state() private _calibrationOffset = 0.0;
   @state() private _error = "";
   @state() private _dirty = false;
   @state() private _editing: EditableSection | null = null;
@@ -128,9 +129,6 @@ export class RsRoomDetail extends LitElement {
       }
     }
 
-    /* Section cards handled by rs-section-card */
-
-    /* YAML code block for info panels (slotted into edit dialogs) */
     .yaml-block {
       background: var(--code-editor-background-color, rgba(0, 0, 0, 0.35));
       border: 1px solid var(--divider-color, rgba(255, 255, 255, 0.12));
@@ -151,7 +149,6 @@ export class RsRoomDetail extends LitElement {
       color: #e2a76a;
     }
 
-    /* Actions */
     .actions {
       display: flex;
       align-items: center;
@@ -169,6 +166,23 @@ export class RsRoomDetail extends LitElement {
     .field-hint {
       color: var(--secondary-text-color);
       font-size: 12px;
+    }
+
+    .calibration-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 0;
+    }
+
+    .calibration-input {
+      width: 80px;
+      padding: 4px 8px;
+      background: var(--card-background-color);
+      border: 1px solid var(--divider-color);
+      border-radius: 4px;
+      color: var(--primary-text-color);
+      font-size: 14px;
     }
 
     .exceptions-link {
@@ -267,6 +281,7 @@ export class RsRoomDetail extends LitElement {
       this._comfortCool = this.config.comfort_cool ?? 24.0;
       this._ecoHeat = this.config.eco_heat ?? this.config.eco_temp ?? 17.0;
       this._ecoCool = this.config.eco_cool ?? 27.0;
+      this._calibrationOffset = (this.config as { calibration_offset?: number }).calibration_offset ?? 0.0;
       this._selectedPresencePersons = this.config.presence_persons ?? [];
       this._displayName = this.config.display_name ?? "";
       this._selectedCovers = new Set(this.config.covers ?? []);
@@ -307,6 +322,7 @@ export class RsRoomDetail extends LitElement {
       this._comfortCool = 24.0;
       this._ecoHeat = 17.0;
       this._ecoCool = 27.0;
+      this._calibrationOffset = 0.0;
       this._selectedPresencePersons = [];
       this._displayName = "";
       this._selectedCovers = new Set();
@@ -335,7 +351,6 @@ export class RsRoomDetail extends LitElement {
     }
     this._dirty = false;
 
-    // Unconfigured rooms open the device-edit dialog automatically.
     if (this._devices.length === 0 && this._editing === null) {
       this._editing = "devices";
     }
@@ -349,7 +364,6 @@ export class RsRoomDetail extends LitElement {
     this._editing = null;
   };
 
-  /** Expose effective override for hero-status via the override sub-component. */
   private _getEffectiveOverride(): {
     active: boolean;
     type: import("../types").OverrideType | null;
@@ -363,7 +377,6 @@ export class RsRoomDetail extends LitElement {
     if (overrideEl) {
       return overrideEl.getEffectiveOverride();
     }
-    // Fallback before sub-component mounts
     const live = this.config?.live;
     if (live?.override_active && live.override_type) {
       return {
@@ -504,6 +517,22 @@ export class RsRoomDetail extends LitElement {
                     .language=${this.hass.language}
                     @sensor-changed=${this._onSensorChanged}
                   ></rs-sensor-section>
+                </rs-section-card>
+
+                <rs-section-card
+                  icon="mdi:tune"
+                  heading="Calibrazione Setpoint"
+                >
+                  <div class="calibration-row">
+                    <span>Offset Temperatura (°C)</span>
+                    <input
+                      type="number"
+                      step="0.1"
+                      class="calibration-input"
+                      .value=${this._calibrationOffset.toString()}
+                      @change=${this._onCalibrationOffsetChanged}
+                    />
+                  </div>
                 </rs-section-card>
 
                 ${this.presenceEnabled && this.presencePersons.length > 0
@@ -866,8 +895,6 @@ export class RsRoomDetail extends LitElement {
     }
   }
 
-  // ---- Child event handlers ----
-
   private _onModeChanged(e: CustomEvent<{ mode: ClimateMode }>) {
     this._climateMode = e.detail.mode;
     this._autoSave();
@@ -907,12 +934,17 @@ export class RsRoomDetail extends LitElement {
     this._autoSave();
   }
 
+  private _onCalibrationOffsetChanged(e: Event) {
+    const val = parseFloat((e.target as HTMLInputElement).value);
+    this._calibrationOffset = isNaN(val) ? 0.0 : val;
+    this._autoSave();
+  }
+
   private _onDeviceChanged(e: CustomEvent<{ devices: DeviceConfig[] }>) {
     const oldDeviceIds = new Set(this._devices.map((d) => d.entity_id));
     this._devices = e.detail.devices;
     const newDeviceIds = new Set(this._devices.map((d) => d.entity_id));
 
-    // Clean up valve protection exclude list for removed devices
     for (const eid of oldDeviceIds) {
       if (!newDeviceIds.has(eid) && this._valveProtectionExclude.has(eid)) {
         const nextExclude = new Set(this._valveProtectionExclude);
@@ -921,7 +953,6 @@ export class RsRoomDetail extends LitElement {
       }
     }
 
-    // Moving to non-TRV: remove from valve protection exclude list
     for (const d of this._devices) {
       if (d.type !== "trv" && this._valveProtectionExclude.has(d.entity_id)) {
         const nextExclude = new Set(this._valveProtectionExclude);
@@ -972,8 +1003,6 @@ export class RsRoomDetail extends LitElement {
     this._ignorePresence = e.detail;
     this._autoSave();
   }
-
-  // ---- Cover event handlers ----
 
   private _onCoversToggle(e: CustomEvent<{ entityId: string; checked: boolean }>) {
     const { entityId, checked } = e.detail;
@@ -1034,8 +1063,6 @@ export class RsRoomDetail extends LitElement {
     }
   }
 
-  // ---- Heat source orchestration ----
-
   private _onHeatSourceSettingChanged(e: CustomEvent<{ key: string; value: unknown }>) {
     const { key, value } = e.detail;
     e.stopPropagation();
@@ -1047,8 +1074,6 @@ export class RsRoomDetail extends LitElement {
     this._autoSave();
   }
 
-  // ---- Outdoor toggle ----
-
   private _onClimateControlToggle(e: CustomEvent) {
     this._climateControlEnabled = e.detail;
     this._autoSave();
@@ -1058,8 +1083,6 @@ export class RsRoomDetail extends LitElement {
     this._isOutdoor = e.detail;
     this._autoSave();
   }
-
-  // ---- Auto-save ----
 
   private _onDisplayNameChanged(e: CustomEvent<{ value: string }>) {
     this._displayName = e.detail.value;
@@ -1094,6 +1117,7 @@ export class RsRoomDetail extends LitElement {
         comfort_cool: this._comfortCool,
         eco_heat: this._ecoHeat,
         eco_cool: this._ecoCool,
+        calibration_offset: this._calibrationOffset,
         presence_persons: this._selectedPresencePersons.filter((p) => p),
         display_name: this._displayName,
         covers: [...this._selectedCovers],
