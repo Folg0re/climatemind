@@ -17,8 +17,15 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.typing import ConfigType
 
+from .api import services as api_services
+from .calibration.offset_manager import OffsetManager
 from .const import DOMAIN, PLATFORMS, VERSION
 from .coordinator import ClimateMindCoordinator
+from .forecast.forecast_feeder import ForecastFeeder
+from .global_mode.global_thermostat import GlobalModeManager
+from .global_mode.scenes import SceneManager
+from .heating_source.central_calendar import CentralCalendar
+from .heating_source.central_heating import CentralHeatingManager
 from .store import ClimateMindStore
 from .websocket_api import async_register_websocket_commands
 
@@ -49,6 +56,34 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     hass.data[DOMAIN][entry.entry_id] = coordinator
     hass.data[DOMAIN]["coordinator"] = coordinator
+
+    # Register central heating manager (calendar + forecast-driven availability)
+    settings = hass.data[DOMAIN]["store"].get_settings()
+    calendar_cfg = settings.get("central_heating_calendar", {})
+    # calendar_cfg expected as mapping weekday->list of (start,end) strings
+    calendar = CentralCalendar(calendar_cfg)
+    central_heating = CentralHeatingManager(hass, coordinator._weather_manager, calendar)
+    hass.data[DOMAIN]["central_heating"] = central_heating
+    # expose on coordinator for convenience
+    coordinator.central_heating = central_heating
+
+    # Initialize calibration, scenes, global mode and forecast feeder
+    offset_mgr = OffsetManager(hass)
+    await offset_mgr.async_load()
+    hass.data[DOMAIN]["offset_manager"] = offset_mgr
+
+    scene_mgr = SceneManager(hass)
+    await scene_mgr.async_load()
+    hass.data[DOMAIN]["scene_manager"] = scene_mgr
+
+    global_mode = GlobalModeManager(hass)
+    hass.data[DOMAIN]["global_mode"] = global_mode
+
+    forecast_feeder = ForecastFeeder(hass, coordinator)
+    hass.data[DOMAIN]["forecast_feeder"] = forecast_feeder
+
+    # Register external services facade
+    await api_services.async_register_services(hass, hass.data[DOMAIN]["store"], offset_mgr, scene_mgr, global_mode)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
