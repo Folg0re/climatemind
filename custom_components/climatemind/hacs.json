@@ -1,0 +1,9 @@
+{
+  "name": "climatemind",
+  "zip_release": false,
+  "filename": "climatemind.zip",
+  "content": [
+    "custom_components/climatemind/**",
+    "custom_components/climatemind/frontend/**"
+  ]
+}
