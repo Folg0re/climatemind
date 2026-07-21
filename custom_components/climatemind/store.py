@@ -99,7 +99,6 @@ class ClimateMindStore:
         self._settings = stored.get("settings", {}) if stored else {}
         self._thermal_data = stored.get("thermal_data", {}) if stored else {}
 
-        # One-time migrations (combined into single pass + single save)
         device_migrated = 0
         hp_migrated = 0
         override_migrated = 0
@@ -119,14 +118,6 @@ class ClimateMindStore:
         orphan_settings_removed = [k for k in _ORPHAN_SETTINGS_KEYS if self._settings.pop(k, None) is not None]
         if device_migrated or hp_migrated or override_migrated or orphan_settings_removed:
             await self._async_save()
-        if device_migrated:
-            _LOGGER.info("Migrated %d room(s) to unified device model", device_migrated)
-        if hp_migrated:
-            _LOGGER.info("Migrated %d room(s) from heat_pump to ac device type", hp_migrated)
-        if override_migrated:
-            _LOGGER.info("Migrated %d room(s) to split override heat/cool", override_migrated)
-        if orphan_settings_removed:
-            _LOGGER.info("Removed orphan setting(s): %s", ", ".join(orphan_settings_removed))
 
     async def _async_save(self) -> None:
         """Persist current room data to the HA store."""
@@ -181,21 +172,12 @@ class ClimateMindStore:
 
     @staticmethod
     def _sync_devices(room: dict, config: dict) -> None:
-        """Bidirectional sync between devices[] and legacy thermostats/acs fields.
-
-        Used for the UPDATE path only. Presence check (not truthiness) on
-        ``"devices" in config`` so that sending ``devices=[]`` still triggers
-        the devices→legacy sync.
-        """
         if "devices" in config:
-            # New frontend: devices is source of truth -> regenerate legacy.
-            # Also derive heating_system_type from devices (ignore any sent value).
             t, a = devices_to_legacy(room["devices"])
             room["thermostats"] = t
             room["acs"] = a
             room["heating_system_type"] = get_room_heating_system_type(room["devices"])
         elif "thermostats" in config or "acs" in config:
-            # Old frontend: legacy is source of truth -> regenerate devices
             room["devices"] = legacy_to_devices(
                 room.get("thermostats", []),
                 room.get("acs", []),
@@ -203,28 +185,22 @@ class ClimateMindStore:
             )
 
     def _merge_room(self, area_id: str, config: dict) -> dict:
-        """Merge config changes into an existing room."""
         existing = self._data[area_id]
         for key, value in config.items():
             if key != "area_id":
                 existing[key] = value
-        # Sync legacy fields from split fields for backward compat
         if "comfort_heat" in config:
             existing["comfort_temp"] = config["comfort_heat"]
         if "eco_heat" in config:
             existing["eco_temp"] = config["eco_heat"]
-        # Reverse-sync: legacy callers sending only comfort_temp/eco_temp
         if "comfort_temp" in config and "comfort_heat" not in config:
             existing["comfort_heat"] = config["comfort_temp"]
         if "eco_temp" in config and "eco_heat" not in config:
             existing["eco_heat"] = config["eco_temp"]
-        # Directional device sync
         self._sync_devices(existing, config)
         return existing
 
     def _create_room(self, area_id: str, config: dict) -> dict:
-        """Create a new room with defaults and device sync."""
-        # Derive split fields from legacy if needed
         comfort_heat = config.get("comfort_heat", config.get("comfort_temp", DEFAULT_COMFORT_HEAT))
         eco_heat = config.get("eco_heat", config.get("eco_temp", DEFAULT_ECO_HEAT))
         room = {
@@ -245,7 +221,7 @@ class ClimateMindStore:
             "comfort_cool": config.get("comfort_cool", DEFAULT_COMFORT_COOL),
             "eco_heat": eco_heat,
             "eco_cool": config.get("eco_cool", DEFAULT_ECO_COOL),
-            "calibration_offset": config.get("calibration_offset", 0.0)
+            "calibration_offset": config.get("calibration_offset", 0.0),
             "presence_persons": config.get("presence_persons", []),
             "display_name": config.get("display_name", ""),
             "heating_system_type": config.get("heating_system_type", ""),
@@ -275,7 +251,6 @@ class ClimateMindStore:
             "heat_source_ac_min_outdoor": config.get("heat_source_ac_min_outdoor", DEFAULT_HEAT_SOURCE_AC_MIN_OUTDOOR),
             "climate_control_enabled": config.get("climate_control_enabled", True),
         }
-        # Directional device sync for new rooms (truthiness check, not just presence)
         if "devices" in config and config["devices"]:
             t, a = devices_to_legacy(room["devices"])
             room["thermostats"] = t
@@ -289,7 +264,6 @@ class ClimateMindStore:
                 room["acs"],
                 room.get("heating_system_type", ""),
             )
-        # Ensure legacy keys always exist (for backward compat)
         room.setdefault("thermostats", [])
         room.setdefault("acs", [])
         return room
@@ -305,17 +279,10 @@ class ClimateMindStore:
         return room
 
     async def async_update_room(self, area_id: str, changes: dict) -> dict:
-        """Merge changes into an existing room. Raises KeyError if not found.
-
-        Note: Does NOT perform device sync (devices <-> thermostats/acs).
-        Use async_save_room() for changes involving device fields.
-        """
+        """Merge changes into an existing room. Raises KeyError if not found."""
         if area_id not in self._data:
             raise KeyError(f"Room '{area_id}' not found")
-
-        # Prevent overriding the area_id
         changes.pop("area_id", None)
-
         self._data[area_id].update(changes)
         await self._async_save()
         return self._data[area_id]
@@ -324,6 +291,5 @@ class ClimateMindStore:
         """Delete a room. Raises KeyError if not found."""
         if area_id not in self._data:
             raise KeyError(f"Room '{area_id}' not found")
-
         del self._data[area_id]
         await self._async_save()
