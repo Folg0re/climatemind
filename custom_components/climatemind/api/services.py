@@ -1,44 +1,52 @@
-"""Service facade for ClimateMind integration."""
-
-from __future__ import annotations
-
-from typing import Any
-
-from homeassistant.core import HomeAssistant
+"""Facciata di registrazione e gestione dei servizi ClimateMind per Home Assistant."""
+import logging
+import voluptuous as vol
+from homeassistant.core import HomeAssistant, ServiceCall
+import homeassistant.helpers.config_validation as cv
 
 from ..const import DOMAIN
 
+_LOGGER = logging.getLogger(__name__)
 
-async def async_register_services(
-    hass: HomeAssistant, store: Any, offset_manager: Any, scene_manager: Any, global_mode: Any
-) -> None:
-    """Register ClimateMind services exposed to Home Assistant."""
+SERVICE_SET_OFFSET = "set_offset"
+SERVICE_APPLY_SCENE = "apply_scene"
+SERVICE_SET_GLOBAL_MODE = "set_global_mode"
 
-    async def _set_offset(call):
-        data = call.data
-        area = data.get("area_id")
-        offset = float(data.get("offset", 0.0))
-        duration = data.get("duration")
-        if area == "all":
-            # apply to all known rooms
-            rooms = store.get_rooms()
-            for rid in rooms.keys():
-                await offset_manager.async_set_offset(rid, offset, duration)
-        else:
-            await offset_manager.async_set_offset(area, offset, duration)
+SCHEMA_SET_OFFSET = vol.Schema({
+    vol.Required("target_entity"): cv.entity_id,
+    vol.Required("offset"): vol.Coerce(float),
+})
 
-    async def _apply_scene(call):
-        scene_id = call.data.get("scene_id")
-        if not scene_id:
-            return
-        await scene_manager.async_apply_scene(scene_id)
+SCHEMA_APPLY_SCENE = vol.Schema({
+    vol.Required("scene_id"): cv.string,
+})
 
-    async def _set_global_mode(call):
-        mode = call.data.get("mode")
-        if not mode:
-            return
-        await global_mode.async_set_mode(mode)
+SCHEMA_SET_GLOBAL_MODE = vol.Schema({
+    vol.Required("mode"): vol.In(["per_room", "global_only"]),
+})
 
-    hass.services.async_register(DOMAIN, "set_offset", _set_offset)
-    hass.services.async_register(DOMAIN, "apply_scene", _apply_scene)
-    hass.services.async_register(DOMAIN, "set_global_mode", _set_global_mode)
+async def async_setup_services(hass: HomeAssistant) -> None:
+    """Registra i servizi dell'integrazione."""
+
+    async def handle_set_offset(call: ServiceCall) -> None:
+        entity_id = call.data["target_entity"]
+        offset = call.data["offset"]
+        _LOGGER.debug("Esecuzione service set_offset: %s -> %s°C", entity_id, offset)
+        offset_mgr = hass.data[DOMAIN]["offset_manager"]
+        await offset_mgr.async_set_offset(entity_id, offset)
+
+    async def handle_apply_scene(call: ServiceCall) -> None:
+        scene_id = call.data["scene_id"]
+        _LOGGER.debug("Esecuzione service apply_scene: %s", scene_id)
+        scene_engine = hass.data[DOMAIN]["scene_engine"]
+        await scene_engine.async_apply_scene(scene_id)
+
+    async def handle_set_global_mode(call: ServiceCall) -> None:
+        mode = call.data["mode"]
+        _LOGGER.debug("Esecuzione service set_global_mode: %s", mode)
+        global_thermostat = hass.data[DOMAIN]["global_thermostat"]
+        await global_thermostat.async_set_mode(mode)
+
+    hass.services.async_register(DOMAIN, SERVICE_SET_OFFSET, handle_set_offset, schema=SCHEMA_SET_OFFSET)
+    hass.services.async_register(DOMAIN, SERVICE_APPLY_SCENE, handle_apply_scene, schema=SCHEMA_APPLY_SCENE)
+    hass.services.async_register(DOMAIN, SERVICE_SET_GLOBAL_MODE, handle_set_global_mode, schema=SCHEMA_SET_GLOBAL_MODE)

@@ -1,25 +1,50 @@
-services:
-  set_offset:
-    description: "Set calibration offset for an area or all areas"
-    fields:
-      area_id:
-        description: "Area id or 'all' to apply to all rooms"
-        example: "living_room"
-      offset:
-        description: "Offset in degrees Celsius"
-        example: 1.5
-      duration:
-        description: "Optional duration in minutes for temporary offset"
-        example: 120
-  apply_scene:
-    description: "Activate a predefined scene"
-    fields:
-      scene_id:
-        description: "Scene identifier"
-        example: "vacation"
-  set_global_mode:
-    description: "Set global thermostat mode"
-    fields:
-      mode:
-        description: "Mode name (e.g. per_room, global_only)"
-        example: "global_only"
+set_offset:
+  name: Imposta Offset Sensore
+  description: Applica un offset di calibrazione a un sensore o a un'intera area.
+  fields:
+    target_entity:
+      name: Entità Sensore
+      description: ID dell'entità sensore di temperatura (es. sensor.termometro_salotto).
+      required: true
+      example: "sensor.termometro_salotto"
+      selector:
+        entity:
+          domain: sensor
+          device_class: temperature
+    offset:
+      name: Offset (°C)
+      description: Valore di correzione in gradi Celsius (es. -1.5).
+      required: true
+      example: -1.5
+      selector:
+        number:
+          min: -10
+          max: 10
+          step: 0.1
+          unit_of_measurement: "°C"
+
+apply_scene:
+  name: Applica Scena Clima
+  description: Attiva una scena definita (preset per-stanza e eventuale modalità globale).
+  fields:
+    scene_id:
+      name: ID Scena
+      description: Identificatore della scena (es. vacanza, notte, ospiti).
+      required: true
+      example: "notte"
+      selector:
+        text:
+
+set_global_mode:
+  name: Imposta Modalità Globale
+  description: Attiva o disattiva il controllo termostatico globale per la casa.
+  fields:
+    mode:
+      name: Modalità
+      description: Tipo di controllo attivo.
+      required: true
+      selector:
+        select:
+          options:
+            - "per_room"
+            - "global_only"
