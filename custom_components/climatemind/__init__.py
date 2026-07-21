@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 
+from homeassistant.components.frontend import async_register_built_in_panel
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.typing import ConfigType
@@ -55,9 +56,29 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     hass.data[DOMAIN][entry.entry_id] = coordinator
     hass.data[DOMAIN]["coordinator"] = coordinator
+    hass.data[DOMAIN]["store"] = store
     hass.data[DOMAIN]["offset_manager"] = offset_manager
     hass.data[DOMAIN]["scene_engine"] = scene_engine
     hass.data[DOMAIN]["forecast_feeder"] = forecast_feeder
+
+    try:
+        async_register_built_in_panel(
+            hass,
+            component_name="custom",
+            sidebar_title="ClimateMind",
+            sidebar_icon="mdi:home-thermometer",
+            frontend_url_path="climatemind",
+            config={
+                "_panel_custom": {
+                    "name": "climatemind-panel",
+                    "embed_iframe": False,
+                    "trust_external": False,
+                    "js_url": "/api/hassio_ingress/none/climatemind-panel.js",
+                }
+            },
+        )
+    except Exception as err:  # noqa: BLE001
+        _LOGGER.debug("Panel ClimateMind already registered or unavailable: %s", err)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     await async_setup_services(hass)
@@ -70,4 +91,6 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
         hass.data[DOMAIN].pop(entry.entry_id, None)
+        if not hass.data[DOMAIN].get(entry.entry_id) and "coordinator" in hass.data[DOMAIN]:
+            hass.data[DOMAIN].pop("coordinator", None)
     return unload_ok
