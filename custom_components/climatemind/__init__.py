@@ -21,6 +21,7 @@ from .forecast.weather_provider import WeatherProvider
 from .global_mode.scene_store import SceneStore
 from .global_mode.scenes import SceneEngine
 from .store import ClimateMindStore
+from .websocket_api import async_register_websocket_commands
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -94,6 +95,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
     except Exception as err:  # noqa: BLE001
         _LOGGER.debug("Panel ClimateMind already registered or unavailable: %s", err)
+
+    # Registra i comandi dell'API WebSocket affinché il frontend possa comunicare e salvare
+    async_register_websocket_commands(hass)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     await async_setup_services(hass)
