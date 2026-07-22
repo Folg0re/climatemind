@@ -477,17 +477,8 @@ class ClimateMindCoordinator(DataUpdateCoordinator):
             else None
         )
 
+        # targets reali della stanza (lasciati intatti per l'MPC e per la UI)
         targets = self._resolve_target_temps(room, settings, schedule_blocks, schedule_entity_id)
-
-        # --- APPLICAZIONE DELL'OFFSET DI CALIBRAZIONE E TRONCAMENTO A INTERO ---
-        offset = room.get("calibration_offset", 0.0)
-        if offset != 0.0:
-            h_adj = targets.heat + offset if targets.heat is not None else None
-            c_adj = targets.cool + offset if targets.cool is not None else None
-            targets = TargetTemps(
-                heat=float(_round_down_to_int(h_adj)) if h_adj is not None else None,
-                cool=float(_round_down_to_int(c_adj)) if c_adj is not None else None,
-            )
 
         force_off = targets.heat is None and targets.cool is None
         if mold_prevention_active_room and mold_prevention_temp_delta > 0:
@@ -673,13 +664,28 @@ class ClimateMindCoordinator(DataUpdateCoordinator):
                 q_residual=q_residual,
             )
 
-        # --- LOGICA DI THROTTLING / CHANGE DETECTION ---
+        # --- CREAZIONE DEI TARGET HARDWARE CON APPLICAZIONE DELL'OFFSET E INTERO ---
+        offset = room.get("calibration_offset", 0.0)
+        if offset != 0.0:
+            h_dev = targets.heat + offset if targets.heat is not None else None
+            c_dev = targets.cool + offset if targets.cool is not None else None
+            device_targets = TargetTemps(
+                heat=float(_round_down_to_int(h_dev)) if h_dev is not None else None,
+                cool=float(_round_down_to_int(c_dev)) if c_dev is not None else None,
+            )
+        else:
+            device_targets = TargetTemps(
+                heat=float(_round_down_to_int(targets.heat)) if targets.heat is not None else None,
+                cool=float(_round_down_to_int(targets.cool)) if targets.cool is not None else None,
+            )
+
+        # --- LOGICA DI THROTTLING / CHANGE DETECTION SUI COMANDI HARDWARE ---
         last_cmd = self._last_sent_commands.get(area_id, {})
         current_cmd = {
             "mode": mode,
             "power_fraction": round(power_fraction, 2),
-            "heat": targets.heat,
-            "cool": targets.cool,
+            "heat": device_targets.heat,
+            "cool": device_targets.cool,
         }
 
         has_changed = (
@@ -707,9 +713,10 @@ class ClimateMindCoordinator(DataUpdateCoordinator):
         else:
             self._last_sent_commands[area_id] = current_cmd
             try:
+                # Passiamo i target compensati dall'offset (device_targets) all'hardware
                 await controller.async_apply(
                     mode,
-                    targets,
+                    device_targets,
                     power_fraction=power_fraction,
                     current_temp=current_temp,
                     exclude_eids=cycling_eids,
