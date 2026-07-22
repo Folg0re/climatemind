@@ -27,6 +27,13 @@ from .const import (
 from .coordinator import ClimateMindCoordinator
 
 
+def _round_to_step(val: float | None, step: float = 0.5) -> float | None:
+    """Arrotonda un valore numerico allo step desiderato (es. 0.5°C per gli AC)."""
+    if val is None or not isinstance(val, (int, float)):
+        return None
+    return round(round(val / step) * step, 2)
+
+
 def _create_room_climates(
     coordinator: ClimateMindCoordinator,
     area_id: str,
@@ -117,25 +124,38 @@ class ClimateMindOverrideClimate(CoordinatorEntity, ClimateEntity):
         if not self._is_override_active():
             return None
         room = self._room() or {}
+        offset = room.get("calibration_offset", 0.0)
+
         if self._climate_mode() == "cool_only":
             val = room.get("override_cool")
         else:
             val = room.get("override_heat")
-        return float(val) if isinstance(val, (int, float)) else None
+
+        if isinstance(val, (int, float)):
+            return _round_to_step(float(val) + offset, self._attr_target_temperature_step)
+        return None
 
     @property
     def target_temperature_low(self) -> float | None:
         if not self._is_override_active():
             return None
-        val = (self._room() or {}).get("override_heat")
-        return float(val) if isinstance(val, (int, float)) else None
+        room = self._room() or {}
+        offset = room.get("calibration_offset", 0.0)
+        val = room.get("override_heat")
+        if isinstance(val, (int, float)):
+            return _round_to_step(float(val) + offset, self._attr_target_temperature_step)
+        return None
 
     @property
     def target_temperature_high(self) -> float | None:
         if not self._is_override_active():
             return None
-        val = (self._room() or {}).get("override_cool")
-        return float(val) if isinstance(val, (int, float)) else None
+        room = self._room() or {}
+        offset = room.get("calibration_offset", 0.0)
+        val = room.get("override_cool")
+        if isinstance(val, (int, float)):
+            return _round_to_step(float(val) + offset, self._attr_target_temperature_step)
+        return None
 
     @property
     def current_temperature(self) -> float | None:
@@ -150,28 +170,31 @@ class ClimateMindOverrideClimate(CoordinatorEntity, ClimateEntity):
         return float(val) if isinstance(val, (int, float)) else None
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
-        """Set override targets from range or single temperature."""
+        """Set override targets from range or single temperature, applying inverse offset."""
         store = self.coordinator.hass.data[DOMAIN]["store"]
+        room = self._room() or {}
+        offset = room.get("calibration_offset", 0.0)
+
         mode = self._climate_mode()
         low = kwargs.get(ATTR_TARGET_TEMP_LOW)
         high = kwargs.get(ATTR_TARGET_TEMP_HIGH)
         single = kwargs.get(ATTR_TEMPERATURE)
+
         if low is not None or high is not None:
-            heat, cool = low, high
+            heat = (low - offset) if low is not None else None
+            cool = (high - offset) if high is not None else None
         elif single is not None:
-            room = self._room() or {}
+            adjusted_single = single - offset
             if mode == "cool_only":
-                heat, cool = None, single
+                heat, cool = None, adjusted_single
             elif mode == "heat_only":
-                heat, cool = single, None
+                heat, cool = adjusted_single, None
             else:
-                # Auto: a bare `temperature` (legacy/external automation) must NOT
-                # collapse to a single point (that is the cycling bug). Derive a
-                # dead-band identically to the store migration.
-                heat = single
-                cool = max(single, room.get("comfort_cool", DEFAULT_COMFORT_COOL))
+                heat = adjusted_single
+                cool = max(adjusted_single, room.get("comfort_cool", DEFAULT_COMFORT_COOL))
         else:
             return
+
         await store.async_update_room(
             self._area_id,
             {
