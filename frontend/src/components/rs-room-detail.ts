@@ -62,6 +62,7 @@ export class RsRoomDetail extends LitElement {
   @state() private _ecoHeat = 17.0;
   @state() private _ecoCool = 27.0;
   @state() private _calibrationOffset = 0.0;
+  @state() private _manualValveEntity = "";
   @state() private _error = "";
   @state() private _dirty = false;
   @state() private _editing: EditableSection | null = null;
@@ -282,6 +283,7 @@ export class RsRoomDetail extends LitElement {
       this._ecoHeat = this.config.eco_heat ?? this.config.eco_temp ?? 17.0;
       this._ecoCool = this.config.eco_cool ?? 27.0;
       this._calibrationOffset = (this.config as { calibration_offset?: number }).calibration_offset ?? 0.0;
+      this._manualValveEntity = (this.config as { manual_valve_entity?: string }).manual_valve_entity ?? "";
       this._selectedPresencePersons = this.config.presence_persons ?? [];
       this._displayName = this.config.display_name ?? "";
       this._selectedCovers = new Set(this.config.covers ?? []);
@@ -323,6 +325,7 @@ export class RsRoomDetail extends LitElement {
       this._ecoHeat = 17.0;
       this._ecoCool = 27.0;
       this._calibrationOffset = 0.0;
+      this._manualValveEntity = "";
       this._selectedPresencePersons = [];
       this._displayName = "";
       this._selectedCovers = new Set();
@@ -392,6 +395,11 @@ export class RsRoomDetail extends LitElement {
 
   render() {
     if (!this.area) return nothing;
+
+    // Recupera se il riscaldamento centralizzato è abilitato globalmente dallo store delle impostazioni
+    const store = (this.hass as unknown as { data?: { climatemind?: { store?: { getSettings?: () => { central_heating_enabled?: boolean } } } } }).data?.climatemind?.store;
+    const globalSettings = store?.getSettings ? store.getSettings() : {};
+    const centralHeatingActive = !!globalSettings.central_heating_enabled;
 
     return html`
       <div class="detail-layout">
@@ -521,7 +529,7 @@ export class RsRoomDetail extends LitElement {
 
                 <rs-section-card
                   icon="mdi:tune"
-                  heading="Calibrazione Setpoint"
+                  heading="Calibrazione"
                 >
                   <div class="calibration-row">
                     <span>Offset Temperatura (°C)</span>
@@ -533,6 +541,24 @@ export class RsRoomDetail extends LitElement {
                       @change=${this._onCalibrationOffsetChanged}
                     />
                   </div>
+
+                  ${centralHeatingActive
+                    ? html`
+                        <div class="calibration-row" style="margin-top: 12px; border-top: 1px solid var(--divider-color); pt: 8px;">
+                          <div style="display: flex; flex-direction: column;">
+                            <span style="font-size: 13px; font-weight: 500;">Valvola Manuale (0-5)</span>
+                            <span class="field-hint">Helper input_number associato</span>
+                          </div>
+                          <ha-entity-picker
+                            .hass=${this.hass}
+                            .value=${this._manualValveEntity}
+                            .includeDomains=${["input_number"]}
+                            @value-changed=${this._onManualValveEntityChanged}
+                            style="width: 180px;"
+                          ></ha-entity-picker>
+                        </div>
+                      `
+                    : nothing}
                 </rs-section-card>
 
                 ${this.presenceEnabled && this.presencePersons.length > 0
@@ -552,7 +578,7 @@ export class RsRoomDetail extends LitElement {
                         .presencePersons=${this.presencePersons}
                         .selectedPresencePersons=${this._selectedPresencePersons}
                         .ignorePresence=${this._ignorePresence}
-                        .editing=${false}
+                        .editing=${true}
                         .language=${this.hass.language}
                         @presence-persons-changed=${this._onPresencePersonsChanged}
                         @ignore-presence-changed=${this._onIgnorePresenceChanged}
@@ -573,7 +599,7 @@ export class RsRoomDetail extends LitElement {
                 <rs-covers-section
                   .hass=${this.hass}
                   .area=${this.area}
-                  .editing=${false}
+                  .editing=${true}
                   .selectedCovers=${this._selectedCovers}
                   .autoEnabled=${this._coversAutoEnabled}
                   .deployThreshold=${this._coversDeployThreshold}
@@ -666,17 +692,17 @@ export class RsRoomDetail extends LitElement {
             <div class="yaml-block">
               ${unsafeHTML(
                 '<span class="yaml-key">schedule</span>:\n' +
-                  '  <span class="yaml-key">living_room_heating</span>:\n' +
-                  '    <span class="yaml-key">name</span>: <span class="yaml-value">Living Room Heating</span>\n' +
-                  '    <span class="yaml-key">monday</span>:\n' +
-                  '      - <span class="yaml-key">from</span>: <span class="yaml-value">"06:00:00"</span>\n' +
-                  '        <span class="yaml-key">to</span>: <span class="yaml-value">"08:00:00"</span>\n' +
-                  '        <span class="yaml-key">data</span>:\n' +
-                  '          <span class="yaml-key">temperature</span>: <span class="yaml-value">23</span>\n' +
-                  '      - <span class="yaml-key">from</span>: <span class="yaml-value">"17:00:00"</span>\n' +
-                  '        <span class="yaml-key">to</span>: <span class="yaml-value">"22:00:00"</span>\n' +
-                  '        <span class="yaml-key">data</span>:\n' +
-                  '          <span class="yaml-key">temperature</span>: <span class="yaml-value">21.5</span>',
+                  ' &nbsp;<span class="yaml-key">living_room_heating</span>:\n' +
+                  ' &nbsp; &nbsp;<span class="yaml-key">name</span>: <span class="yaml-value">Living Room Heating</span>\n' +
+                  ' &nbsp; &nbsp;<span class="yaml-key">monday</span>:\n' +
+                  ' &nbsp; &nbsp; &nbsp;- <span class="yaml-key">from</span>: <span class="yaml-value">"06:00:00"</span>\n' +
+                  ' &nbsp; &nbsp; &nbsp; &nbsp;<span class="yaml-key">to</span>: <span class="yaml-value">"08:00:00"</span>\n' +
+                  ' &nbsp; &nbsp; &nbsp; &nbsp;<span class="yaml-key">data</span>:\n' +
+                  ' &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;<span class="yaml-key">temperature</span>: <span class="yaml-value">23</span>\n' +
+                  ' &nbsp; &nbsp; &nbsp;- <span class="yaml-key">from</span>: <span class="yaml-value">"17:00:00"</span>\n' +
+                  ' &nbsp; &nbsp; &nbsp; &nbsp;<span class="yaml-key">to</span>: <span class="yaml-value">"22:00:00"</span>\n' +
+                  ' &nbsp; &nbsp; &nbsp; &nbsp;<span class="yaml-key">data</span>:\n' +
+                  ' &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;<span class="yaml-key">temperature</span>: <span class="yaml-value">21.5</span>',
               )}
             </div>
             <p style="margin-top: 8px">${unsafeHTML(localize("schedule.help_block_note", lang))}</p>
@@ -687,10 +713,10 @@ export class RsRoomDetail extends LitElement {
             <div class="yaml-block">
               ${unsafeHTML(
                 '- <span class="yaml-key">from</span>: <span class="yaml-value">"06:00:00"</span>\n' +
-                  '  <span class="yaml-key">to</span>: <span class="yaml-value">"08:00:00"</span>\n' +
-                  '  <span class="yaml-key">data</span>:\n' +
-                  '    <span class="yaml-key">heat_temperature</span>: <span class="yaml-value">21</span>\n' +
-                  '    <span class="yaml-key">cool_temperature</span>: <span class="yaml-value">24</span>',
+                  ' &nbsp;<span class="yaml-key">to</span>: <span class="yaml-value">"08:00:00"</span>\n' +
+                  ' &nbsp;<span class="yaml-key">data</span>:\n' +
+                  ' &nbsp; &nbsp;<span class="yaml-key">heat_temperature</span>: <span class="yaml-value">21</span>\n' +
+                  ' &nbsp; &nbsp;<span class="yaml-key">cool_temperature</span>: <span class="yaml-value">24</span>',
               )}
             </div>
             <p style="margin-top: 8px">${unsafeHTML(localize("schedule.help_split_note", lang))}</p>
@@ -821,13 +847,13 @@ export class RsRoomDetail extends LitElement {
             <div class="yaml-block">
               ${unsafeHTML(
                 '<span class="yaml-key">schedule</span>:\n' +
-                  '  <span class="yaml-key">cover_evening</span>:\n' +
-                  '    <span class="yaml-key">name</span>: <span class="yaml-value">Cover Evening</span>\n' +
-                  '    <span class="yaml-key">monday</span>:\n' +
-                  '      - <span class="yaml-key">from</span>: <span class="yaml-value">"20:00:00"</span>\n' +
-                  '        <span class="yaml-key">to</span>: <span class="yaml-value">"06:00:00"</span>\n' +
-                  '        <span class="yaml-key">data</span>:\n' +
-                  '          <span class="yaml-key">position</span>: <span class="yaml-value">10</span>',
+                  ' &nbsp;<span class="yaml-key">cover_evening</span>:\n' +
+                  ' &nbsp; &nbsp;<span class="yaml-key">name</span>: <span class="yaml-value">Cover Evening</span>\n' +
+                  ' &nbsp; &nbsp;<span class="yaml-key">monday</span>:\n' +
+                  ' &nbsp; &nbsp; &nbsp;- <span class="yaml-key">from</span>: <span class="yaml-value">"20:00:00"</span>\n' +
+                  ' &nbsp; &nbsp; &nbsp; &nbsp;<span class="yaml-key">to</span>: <span class="yaml-value">"06:00:00"</span>\n' +
+                  ' &nbsp; &nbsp; &nbsp; &nbsp;<span class="yaml-key">data</span>:\n' +
+                  ' &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;<span class="yaml-key">position</span>: <span class="yaml-value">10</span>',
               )}
             </div>
             <b>${localize("covers.info.solar_title", lang)}</b><br />
@@ -937,6 +963,11 @@ export class RsRoomDetail extends LitElement {
   private _onCalibrationOffsetChanged(e: Event) {
     const val = parseFloat((e.target as HTMLInputElement).value);
     this._calibrationOffset = isNaN(val) ? 0.0 : val;
+    this._autoSave();
+  }
+
+  private _onManualValveEntityChanged(e: CustomEvent) {
+    this._manualValveEntity = e.detail.value;
     this._autoSave();
   }
 
@@ -1118,6 +1149,7 @@ export class RsRoomDetail extends LitElement {
         eco_heat: this._ecoHeat,
         eco_cool: this._ecoCool,
         calibration_offset: this._calibrationOffset,
+        manual_valve_entity: this._manualValveEntity,
         presence_persons: this._selectedPresencePersons.filter((p) => p),
         display_name: this._displayName,
         covers: [...this._selectedCovers],

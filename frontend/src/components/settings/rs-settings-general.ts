@@ -60,8 +60,12 @@ export class RsSettingsGeneral extends RsSettingsBase {
           </div>
           <ha-switch
             .checked=${this.centralHeatingEnabled}
-            @change=${(e: Event) =>
-              this._fire("centralHeatingEnabled", (e.target as HTMLInputElement).checked)}
+            @change=${(e: Event) => {
+              const checked = (e.target as HTMLInputElement).checked;
+              this.centralHeatingEnabled = checked;
+              this._fire("centralHeatingEnabled", checked);
+              this.requestUpdate();
+            }}
           ></ha-switch>
         </div>
 
@@ -75,8 +79,11 @@ export class RsSettingsGeneral extends RsSettingsBase {
                   .hass=${this.hass}
                   .value=${this.centralHeatingSchedule}
                   .includeDomains=${["schedule"]}
-                  @value-changed=${(e: CustomEvent) =>
-                    this._fire("centralHeatingSchedule", e.detail.value)}
+                  @value-changed=${(e: CustomEvent) => {
+                    const val = e.detail.value;
+                    this.centralHeatingSchedule = val;
+                    this._fire("centralHeatingSchedule", val);
+                  }}
                 ></ha-entity-picker>
               </div>
             `
