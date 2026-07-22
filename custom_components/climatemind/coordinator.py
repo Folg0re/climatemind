@@ -85,14 +85,14 @@ _LOGGER = logging.getLogger(__name__)
 
 
 def _round_down_to_int(val: float | None) -> int | None:
-    """Arrotonda un valore numerico per difetto al numero intero (es. per AC senza decimali)."""
+    """Tronca/Arrotonda un valore numerico per difetto al numero intero (per AC senza decimali)."""
     if val is None or not isinstance(val, (int, float)):
         return None
     return int(math.floor(val))
 
 
 def _get_area_name(hass: HomeAssistant, area_id: str) -> str:
-    """Get human-readable area name from area registry[cite: 9]."""
+    """Get human-readable area name from area registry."""
     try:
         area_reg = ar.async_get(hass)
         area = area_reg.async_get_area(area_id)
@@ -102,10 +102,10 @@ def _get_area_name(hass: HomeAssistant, area_id: str) -> str:
 
 
 class ClimateMindCoordinator(DataUpdateCoordinator):
-    """Central coordinator for ClimateMind room data and state[cite: 9]."""
+    """Central coordinator for ClimateMind room data and state."""
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
-        """Initialize the coordinator[cite: 9]."""
+        """Initialize the coordinator."""
         super().__init__(
             hass,
             _LOGGER,
@@ -154,7 +154,7 @@ class ClimateMindCoordinator(DataUpdateCoordinator):
         self._binary_sensor_entity_areas: set[str] = set()
         self._climate_entity_areas: set[str] = set()
 
-        # Cache per tracciare l'ultimo comando inviato ed evitare spam verso gli AC
+        # Cache per il throttling ed evitare spam verso gli AC
         self._last_sent_commands: dict[str, dict] = {}
 
         self._schedule_blocks_cache: dict[str, dict] = {}
@@ -164,7 +164,7 @@ class ClimateMindCoordinator(DataUpdateCoordinator):
         self.async_add_binary_sensor_entities: Any = None
 
     async def _async_update_data(self) -> dict:
-        """Fetch and compute state for all rooms[cite: 9]."""
+        """Fetch and compute state for all rooms."""
         store = self.hass.data[DOMAIN]["store"]
         rooms = store.get_rooms()
 
@@ -323,7 +323,7 @@ class ClimateMindCoordinator(DataUpdateCoordinator):
         room: dict,
         area_id: str,
     ) -> tuple[float | None, float | None, float | None, bool]:
-        """Read temperature and humidity sensors for a room[cite: 9]."""
+        """Read temperature and humidity sensors for a room."""
         temp_sensor_id = room.get("temperature_sensor")
         has_external_sensor = bool(temp_sensor_id)
 
@@ -478,6 +478,16 @@ class ClimateMindCoordinator(DataUpdateCoordinator):
         )
 
         targets = self._resolve_target_temps(room, settings, schedule_blocks, schedule_entity_id)
+
+        # --- APPLICAZIONE DELL'OFFSET DI CALIBRAZIONE E TRONCAMENTO A INTERO ---
+        offset = room.get("calibration_offset", 0.0)
+        if offset != 0.0:
+            h_adj = targets.heat + offset if targets.heat is not None else None
+            c_adj = targets.cool + offset if targets.cool is not None else None
+            targets = TargetTemps(
+                heat=float(_round_down_to_int(h_adj)) if h_adj is not None else None,
+                cool=float(_round_down_to_int(c_adj)) if c_adj is not None else None,
+            )
 
         force_off = targets.heat is None and targets.cool is None
         if mold_prevention_active_room and mold_prevention_temp_delta > 0:
@@ -663,7 +673,7 @@ class ClimateMindCoordinator(DataUpdateCoordinator):
                 q_residual=q_residual,
             )
 
-        # --- LOGICA DI THROTTLING / CHANGE DETECTION PER I COMANDI ---
+        # --- LOGICA DI THROTTLING / CHANGE DETECTION ---
         last_cmd = self._last_sent_commands.get(area_id, {})
         current_cmd = {
             "mode": mode,
@@ -693,10 +703,8 @@ class ClimateMindCoordinator(DataUpdateCoordinator):
             power_fraction = 0.0
             _LOGGER.debug("Room '%s': no temperature reading since startup, skipping device control", area_id)
         elif not has_changed:
-            # Nessuna variazione effettiva: evitiamo di inviare comandi ripetuti a SmartThings
             _LOGGER.debug("Room '%s': no state change, skipping AC command dispatch", area_id)
         else:
-            # Variazione rilevata: memorizziamo il comando e lo inviamo
             self._last_sent_commands[area_id] = current_cmd
             try:
                 await controller.async_apply(
