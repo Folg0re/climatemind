@@ -83,6 +83,55 @@ from .utils.temp_utils import celsius_delta_to_ha, ha_temp_to_celsius, ha_temp_u
 
 _LOGGER = logging.getLogger(__name__)
 
+# Tabella di conversione standard Danfoss per valvole termostatiche manuali (Posizione 0 - 5)
+DANFOSS_VALVE_CURVE = {
+    0.0: 0.00,
+    0.25: 0.05,
+    0.5: 0.10,
+    0.75: 0.12,
+    1.0: 0.15,
+    1.25: 0.20,
+    1.5: 0.28,
+    1.75: 0.35,
+    2.0: 0.42,
+    2.25: 0.50,
+    2.5: 0.58,
+    2.75: 0.64,
+    3.0: 0.70,
+    3.25: 0.76,
+    3.5: 0.81,
+    3.75: 0.86,
+    4.0: 0.90,
+    4.25: 0.93,
+    4.5: 0.96,
+    4.75: 0.98,
+    5.0: 1.00,
+}
+
+
+def _get_manual_valve_factor(val: float | None) -> float:
+    """Converte la posizione della valvola manuale (0-5) in fattore di flusso (0.0 - 1.0) tramite curva Danfoss."""
+    if val is None:
+        return 1.0
+    val = max(0.0, min(5.0, val))
+    keys = sorted(DANFOSS_VALVE_CURVE.keys())
+    if val in DANFOSS_VALVE_CURVE:
+        return DANFOSS_VALVE_CURVE[val]
+
+    lower = keys[0]
+    upper = keys[-1]
+    for k in keys:
+        if k <= val:
+            lower = k
+        if k >= val:
+            upper = k
+            break
+    if lower == upper:
+        return DANFOSS_VALVE_CURVE[lower]
+
+    fraction = (val - lower) / (upper - lower)
+    return DANFOSS_VALVE_CURVE[lower] + fraction * (DANFOSS_VALVE_CURVE[upper] - DANFOSS_VALVE_CURVE[lower])
+
 
 def _round_down_to_int(val: float | None) -> int | None:
     """Tronca/Arrotonda un valore numerico per difetto al numero intero (per AC senza decimali)."""
@@ -154,14 +203,24 @@ class ClimateMindCoordinator(DataUpdateCoordinator):
         self._binary_sensor_entity_areas: set[str] = set()
         self._climate_entity_areas: set[str] = set()
 
-        # Cache per il throttling ed evitare spam verso gli AC
         self._last_sent_commands: dict[str, dict] = {}
-
         self._schedule_blocks_cache: dict[str, dict] = {}
         self.async_add_entities: Any = None
         self.async_add_switch_entities: Any = None
         self.async_add_climate_entities: Any = None
         self.async_add_binary_sensor_entities: Any = None
+
+    def _is_central_heating_active(self, settings: dict) -> bool:
+        """Verifica se il riscaldamento centralizzato condominiale è attualmente abilitato e attivo via schedule."""
+        if not settings.get("central_heating_enabled", False):
+            return True  # Se disabilitato globalmente, non fa da blocco
+        schedule_eid = settings.get("central_heating_schedule")
+        if not schedule_eid:
+            return True
+        state = self.hass.states.get(schedule_eid)
+        if state is None or state.state in ("unavailable", "unknown"):
+            return True  # Fallback aperto se l'entità schedule non è pronta
+        return state.state == "on"
 
     async def _async_update_data(self) -> dict:
         """Fetch and compute state for all rooms."""
@@ -254,43 +313,6 @@ class ClimateMindCoordinator(DataUpdateCoordinator):
                     )
                 except Exception:  # noqa: BLE001
                     _LOGGER.warning("History record failed for '%s'", area_id)
-
-                room_config = rooms.get(area_id, {})
-                if (
-                    current_temp is not None
-                    and self.outdoor_temp_effective is not None
-                    and not room_config.get("is_outdoor", False)
-                ):
-                    try:
-                        is_window_open = rs.get("window_open", False)
-                        if is_window_open:
-                            raw_pred = self._model_manager.predict_window_open(
-                                area_id,
-                                current_temp,
-                                self.outdoor_temp_effective,
-                                3.0,
-                            )
-                        else:
-                            model = self._model_manager.get_model(area_id)
-                            hp = rs.get("heating_power", 100) / 100.0
-                            Q = (
-                                hp * model.Q_heat
-                                if mode == MODE_HEATING
-                                else (-hp * model.Q_cool if mode == MODE_COOLING else 0.0)
-                            )
-                            raw_pred = model.predict(
-                                current_temp,
-                                self.outdoor_temp_effective,
-                                Q,
-                                3.0,
-                                q_solar=self._current_q_solar * rs.get("shading_factor", 1.0),
-                            )
-                        clamped = max(
-                            current_temp - MAX_PREDICTION_DELTA, min(current_temp + MAX_PREDICTION_DELTA, raw_pred)
-                        )
-                        self._pending_predictions[area_id] = round(clamped, 2)
-                    except Exception:  # noqa: BLE001
-                        pass
 
         self._thermal_save_count += 1
         if self._thermal_save_count >= THERMAL_SAVE_CYCLES:
@@ -477,7 +499,6 @@ class ClimateMindCoordinator(DataUpdateCoordinator):
             else None
         )
 
-        # targets reali della stanza (lasciati intatti per l'MPC e per la UI)
         targets = self._resolve_target_temps(room, settings, schedule_blocks, schedule_entity_id)
 
         force_off = targets.heat is None and targets.cool is None
@@ -544,7 +565,36 @@ class ClimateMindCoordinator(DataUpdateCoordinator):
             shading_factor=shading_factor,
             q_occupancy=q_occupancy,
         )
-        mode, power_fraction = await controller.async_evaluate(current_temp, targets)
+
+        if current_temp is None:
+            mode = MODE_IDLE
+            power_fraction = 0.0
+        else:
+            mode, power_fraction = await controller.async_evaluate(current_temp, targets)
+
+        # --- GESTIONE RISCALDAMENTO CENTRALIZZATO & VALVOLE MANUALI ---
+        central_active = self._is_central_heating_active(settings)
+
+        # Lettura valvola manuale (0 - 5) se configurata per la stanza
+        manual_valve_eid = room.get("manual_valve_entity")
+        manual_valve_val = None
+        if manual_valve_eid:
+            st = self.hass.states.get(manual_valve_eid)
+            if st and st.state not in ("unavailable", "unknown"):
+                try:
+                    manual_valve_val = float(st.state)
+                except (ValueError, TypeError):
+                    pass
+        valve_factor = _get_manual_valve_factor(manual_valve_val)
+
+        # Se il riscaldamento centralizzato è spento via schedule o la valvola manuale è chiusa (0), blocchiamo il riscaldamento
+        if mode == MODE_HEATING:
+            if not central_active or valve_factor <= 0.0:
+                mode = MODE_IDLE
+                power_fraction = 0.0
+            else:
+                # Scala la frazione di potenza in base all'apertura della testa manuale Danfoss
+                power_fraction = round(power_fraction * valve_factor, 2)
 
         climate_mode = room.get("climate_mode", "auto")
         if climate_mode == CLIMATE_MODE_COOL_ONLY:
@@ -664,7 +714,6 @@ class ClimateMindCoordinator(DataUpdateCoordinator):
                 q_residual=q_residual,
             )
 
-        # --- CREAZIONE DEI TARGET HARDWARE CON APPLICAZIONE DELL'OFFSET E INTERO ---
         offset = room.get("calibration_offset", 0.0)
         if offset != 0.0:
             h_dev = targets.heat + offset if targets.heat is not None else None
@@ -679,7 +728,6 @@ class ClimateMindCoordinator(DataUpdateCoordinator):
                 cool=float(_round_down_to_int(targets.cool)) if targets.cool is not None else None,
             )
 
-        # --- LOGICA DI THROTTLING / CHANGE DETECTION SUI COMANDI HARDWARE ---
         last_cmd = self._last_sent_commands.get(area_id, {})
         current_cmd = {
             "mode": mode,
@@ -695,7 +743,7 @@ class ClimateMindCoordinator(DataUpdateCoordinator):
             or abs(last_cmd.get("power_fraction", 0) - current_cmd["power_fraction"]) > 0.05
         )
 
-        if not climate_active or waiting_for_data:
+        if not climate_active or waiting_for_data or current_temp is None:
             mode = MODE_IDLE
             power_fraction = 0.0
             if last_cmd.get("mode") != MODE_IDLE:
@@ -704,10 +752,10 @@ class ClimateMindCoordinator(DataUpdateCoordinator):
         if not climate_active:
             mode = MODE_IDLE
             power_fraction = 0.0
-        elif waiting_for_data:
+        elif waiting_for_data or current_temp is None:
             mode = MODE_IDLE
             power_fraction = 0.0
-            _LOGGER.debug("Room '%s': no temperature reading since startup, skipping device control", area_id)
+            _LOGGER.debug("Room '%s': no temperature reading or starting up, skipping device control", area_id)
         elif not has_changed:
             _LOGGER.debug("Room '%s': no state change, skipping AC command dispatch", area_id)
         else:
@@ -729,7 +777,7 @@ class ClimateMindCoordinator(DataUpdateCoordinator):
             except Exception:  # noqa: BLE001
                 _LOGGER.warning("Room '%s': climate service call failed", area_id, exc_info=True)
 
-        if climate_active and not waiting_for_data:
+        if climate_active and not waiting_for_data and current_temp is not None:
             for eid in all_device_eids:
                 if self._compressor_manager.get_group_for_entity(eid) is None:
                     continue
@@ -769,7 +817,7 @@ class ClimateMindCoordinator(DataUpdateCoordinator):
             self._valve_manager.record_heating(heating_eids)
 
         mpc_active = False
-        if has_external_sensor:
+        if has_external_sensor and current_temp is not None:
             try:
                 _ch, _cc = get_can_heat_cool(
                     room,
@@ -787,7 +835,7 @@ class ClimateMindCoordinator(DataUpdateCoordinator):
                     area_id,
                     _ch,
                     _cc,
-                    current_temp or 20.0,
+                    current_temp,
                     _T_out,
                 )
             except Exception:  # noqa: BLE001
@@ -1018,7 +1066,6 @@ class ClimateMindCoordinator(DataUpdateCoordinator):
             )
         )
 
-        # Applicazione dell'offset di calibrazione al setpoint visivo della UI
         offset = room.get("calibration_offset", 0.0)
         adjusted_setpoint = raw_setpoint + offset if raw_setpoint is not None else None
 

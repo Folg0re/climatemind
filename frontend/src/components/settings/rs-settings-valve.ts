@@ -1,5 +1,5 @@
 /**
- * rs-settings-valve – Valve protection settings.
+ * rs-settings-valve – Valve protection and manual valve settings.
  */
 import { html, nothing } from "lit";
 import { RsSettingsBase } from "./rs-settings-base";
@@ -12,6 +12,7 @@ export class RsSettingsValve extends RsSettingsBase {
   @property({ attribute: false }) public hass!: HomeAssistant;
   @property({ type: Boolean }) public valveProtectionEnabled = false;
   @property({ type: Number }) public valveProtectionInterval = 7;
+  @property({ type: String }) public manualValveEntity = "";
 
   render() {
     const l = this.hass.language;
@@ -51,6 +52,22 @@ export class RsSettingsValve extends RsSettingsBase {
             </div>
           `
         : nothing}
+
+      <div class="settings-section" style="margin-top: 24px; border-top: 1px solid var(--divider-color); padding-top: 16px;">
+        <div class="toggle-text" style="margin-bottom: 12px;">
+          <span class="toggle-label" style="font-weight: 500; display: block;">Testa Termostatica Manuale (0 - 5)</span>
+          <span class="toggle-hint" style="font-size: 12px; color: var(--secondary-text-color);">
+            Associa un helper numerico di Home Assistant (input_number) per simulare la posizione fisica della valvola manuale nella stanza.
+          </span>
+        </div>
+        <ha-entity-picker
+          .hass=${this.hass}
+          .value=${this.manualValveEntity}
+          .includeDomains=${["input_number"]}
+          @value-changed=${(e: CustomEvent) =>
+            this._fire("manualValveEntity", e.detail.value)}
+        ></ha-entity-picker>
+      </div>
     `;
   }
 
