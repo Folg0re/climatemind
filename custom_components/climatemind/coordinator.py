@@ -713,7 +713,6 @@ class ClimateMindCoordinator(DataUpdateCoordinator):
         else:
             self._last_sent_commands[area_id] = current_cmd
             try:
-                # Passiamo i target compensati dall'offset (device_targets) all'hardware
                 await controller.async_apply(
                     mode,
                     device_targets,
@@ -1019,6 +1018,10 @@ class ClimateMindCoordinator(DataUpdateCoordinator):
             )
         )
 
+        # Applicazione dell'offset di calibrazione al setpoint visivo della UI
+        offset = room.get("calibration_offset", 0.0)
+        adjusted_setpoint = raw_setpoint + offset if raw_setpoint is not None else None
+
         return {
             "area_id": area_id,
             "current_temp": current_temp,
@@ -1030,7 +1033,7 @@ class ClimateMindCoordinator(DataUpdateCoordinator):
             "mode": display_mode,
             "commanded_mode": mode,
             "heating_power": round(display_pf * 100) if display_mode != MODE_IDLE else 0,
-            "device_setpoint": _round_down_to_int(raw_setpoint),
+            "device_setpoint": _round_down_to_int(adjusted_setpoint),
             "window_open": window_open,
             **build_override_live(
                 room,
