@@ -282,8 +282,10 @@ export class RsRoomDetail extends LitElement {
       this._comfortCool = this.config.comfort_cool ?? 24.0;
       this._ecoHeat = this.config.eco_heat ?? this.config.eco_temp ?? 17.0;
       this._ecoCool = this.config.eco_cool ?? 27.0;
-      this._calibrationOffset = (this.config as { calibration_offset?: number }).calibration_offset ?? 0.0;
-      this._manualValveEntity = (this.config as { manual_valve_entity?: string }).manual_valve_entity ?? "";
+      this._calibrationOffset =
+        (this.config as { calibration_offset?: number }).calibration_offset ?? 0.0;
+      this._manualValveEntity =
+        (this.config as { manual_valve_entity?: string }).manual_valve_entity ?? "";
       this._selectedPresencePersons = this.config.presence_persons ?? [];
       this._displayName = this.config.display_name ?? "";
       this._selectedCovers = new Set(this.config.covers ?? []);
@@ -396,8 +398,13 @@ export class RsRoomDetail extends LitElement {
   render() {
     if (!this.area) return nothing;
 
-    // Recupera se il riscaldamento centralizzato è abilitato globalmente dallo store delle impostazioni
-    const store = (this.hass as unknown as { data?: { climatemind?: { store?: { getSettings?: () => { central_heating_enabled?: boolean } } } } }).data?.climatemind?.store;
+    const store = (
+      this.hass as unknown as {
+        data?: {
+          climatemind?: { store?: { getSettings?: () => { central_heating_enabled?: boolean } } };
+        };
+      }
+    ).data?.climatemind?.store;
     const globalSettings = store?.getSettings ? store.getSettings() : {};
     const centralHeatingActive = !!globalSettings.central_heating_enabled;
 
@@ -527,10 +534,7 @@ export class RsRoomDetail extends LitElement {
                   ></rs-sensor-section>
                 </rs-section-card>
 
-                <rs-section-card
-                  icon="mdi:tune"
-                  heading="Calibrazione"
-                >
+                <rs-section-card icon="mdi:tune" heading="Calibrazione">
                   <div class="calibration-row">
                     <span>Offset Temperatura (°C)</span>
                     <input
@@ -544,9 +548,14 @@ export class RsRoomDetail extends LitElement {
 
                   ${centralHeatingActive
                     ? html`
-                        <div class="calibration-row" style="margin-top: 12px; border-top: 1px solid var(--divider-color); pt: 8px;">
+                        <div
+                          class="calibration-row"
+                          style="margin-top: 12px; border-top: 1px solid var(--divider-color); pt: 8px;"
+                        >
                           <div style="display: flex; flex-direction: column;">
-                            <span style="font-size: 13px; font-weight: 500;">Valvola Manuale (0-5)</span>
+                            <span style="font-size: 13px; font-weight: 500;"
+                              >Valvola Manuale (0-5)</span
+                            >
                             <span class="field-hint">Helper input_number associato</span>
                           </div>
                           <ha-entity-picker
@@ -578,7 +587,7 @@ export class RsRoomDetail extends LitElement {
                         .presencePersons=${this.presencePersons}
                         .selectedPresencePersons=${this._selectedPresencePersons}
                         .ignorePresence=${this._ignorePresence}
-                        .editing=${true}
+                        .editing=${false}
                         .language=${this.hass.language}
                         @presence-persons-changed=${this._onPresencePersonsChanged}
                         @ignore-presence-changed=${this._onIgnorePresenceChanged}
@@ -599,7 +608,7 @@ export class RsRoomDetail extends LitElement {
                 <rs-covers-section
                   .hass=${this.hass}
                   .area=${this.area}
-                  .editing=${true}
+                  .editing=${false}
                   .selectedCovers=${this._selectedCovers}
                   .autoEnabled=${this._coversAutoEnabled}
                   .deployThreshold=${this._coversDeployThreshold}

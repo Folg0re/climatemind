@@ -4677,10 +4677,7 @@
                   ></rs-sensor-section>
                 </rs-section-card>
 
-                <rs-section-card
-                  icon="mdi:tune"
-                  heading="Calibrazione"
-                >
+                <rs-section-card icon="mdi:tune" heading="Calibrazione">
                   <div class="calibration-row">
                     <span>Offset Temperatura (°C)</span>
                     <input
@@ -4693,9 +4690,14 @@
                   </div>
 
                   ${t?g`
-                        <div class="calibration-row" style="margin-top: 12px; border-top: 1px solid var(--divider-color); pt: 8px;">
+                        <div
+                          class="calibration-row"
+                          style="margin-top: 12px; border-top: 1px solid var(--divider-color); pt: 8px;"
+                        >
                           <div style="display: flex; flex-direction: column;">
-                            <span style="font-size: 13px; font-weight: 500;">Valvola Manuale (0-5)</span>
+                            <span style="font-size: 13px; font-weight: 500;"
+                              >Valvola Manuale (0-5)</span
+                            >
                             <span class="field-hint">Helper input_number associato</span>
                           </div>
                           <ha-entity-picker
@@ -4725,7 +4727,7 @@
                         .presencePersons=${this.presencePersons}
                         .selectedPresencePersons=${this._selectedPresencePersons}
                         .ignorePresence=${this._ignorePresence}
-                        .editing=${!0}
+                        .editing=${!1}
                         .language=${this.hass.language}
                         @presence-persons-changed=${this._onPresencePersonsChanged}
                         @ignore-presence-changed=${this._onIgnorePresenceChanged}
@@ -4743,7 +4745,7 @@
                 <rs-covers-section
                   .hass=${this.hass}
                   .area=${this.area}
-                  .editing=${!0}
+                  .editing=${!1}
                   .selectedCovers=${this._selectedCovers}
                   .autoEnabled=${this._coversAutoEnabled}
                   .deployThreshold=${this._coversDeployThreshold}
