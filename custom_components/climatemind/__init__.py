@@ -50,12 +50,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     scene_engine = SceneEngine(hass, scene_store)
     await scene_engine.async_load()
 
-    weather_entity = entry.options.get("weather_entity") or entry.data.get("weather_entity")
-    weather_provider = WeatherProvider(hass, weather_entity)
-    forecast_feeder = ForecastFeeder(hass, weather_provider)
-
+    # Creazione anticipata del coordinatore per legarlo correttamente al weather provider
     coordinator = ClimateMindDataUpdateCoordinator(hass, entry)
     await coordinator.async_config_entry_first_refresh()
+
+    # Inizializzazione del provider meteo collegato al coordinatore
+    weather_provider = WeatherProvider(hass, coordinator)
+    forecast_feeder = ForecastFeeder(hass, weather_provider)
 
     hass.data[DOMAIN][entry.entry_id] = coordinator
     hass.data[DOMAIN]["coordinator"] = coordinator
@@ -112,4 +113,5 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.data[DOMAIN].pop(entry.entry_id, None)
         if not hass.data[DOMAIN].get(entry.entry_id) and "coordinator" in hass.data[DOMAIN]:
             hass.data[DOMAIN].pop("coordinator", None)
+            hass.data[DOMAIN].pop("forecast_feeder", None)
     return unload_ok
