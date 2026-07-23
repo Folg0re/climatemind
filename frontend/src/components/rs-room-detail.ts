@@ -44,8 +44,8 @@ export class RsRoomDetail extends LitElement {
   @property({ type: Boolean }) public presenceEnabled = false;
   @property({ attribute: false }) public presencePersons: string[] = [];
   @property({ type: Boolean }) public climateControlActive = true;
-
   @property({ type: Boolean }) public valveProtectionEnabled = false;
+  @property({ type: Boolean }) public centralHeatingEnabled = false; // <-- Aggiunto
 
   @state() private _devices: DeviceConfig[] = [];
   @state() private _selectedTempSensor = "";
@@ -398,15 +398,7 @@ export class RsRoomDetail extends LitElement {
   render() {
     if (!this.area) return nothing;
 
-    const store = (
-      this.hass as unknown as {
-        data?: {
-          climatemind?: { store?: { getSettings?: () => { central_heating_enabled?: boolean } } };
-        };
-      }
-    ).data?.climatemind?.store;
-    const globalSettings = store?.getSettings ? store.getSettings() : {};
-    const centralHeatingActive = !!globalSettings.central_heating_enabled;
+    const centralHeatingActive = this.centralHeatingEnabled;
 
     return html`
       <div class="detail-layout">
