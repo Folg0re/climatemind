@@ -397,6 +397,8 @@ export class RsRoomDetail extends LitElement {
 
   render() {
     if (!this.area) return nothing;
+// eslint-disable-next-line no-console
+    console.log("[ClimateMind Debug] centralHeatingEnabled:", this.centralHeatingEnabled, "isOutdoor:", this._isOutdoor);
 
     const centralHeatingActive = this.centralHeatingEnabled;
 
