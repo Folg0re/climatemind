@@ -476,6 +476,7 @@ export class ClimateMindPanel extends LitElement {
             .presencePersons=${this._presencePersons}
             .climateControlActive=${this._climateControlActive}
             .valveProtectionEnabled=${this._valveProtectionEnabled}
+            .centralHeatingEnabled=${this._centralHeatingEnabled}
             @back-clicked=${this._onBackFromDetail}
             @room-updated=${this._onRoomUpdated}
           ></rs-room-detail>

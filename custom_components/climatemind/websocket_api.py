@@ -933,17 +933,6 @@ async def websocket_covers_clear_override(
     msg: dict,
 ) -> None:
 
-    """Save global settings (partial merge)."""
-    # <-- AGGIUNGI QUESTA RIGA PER INTERCETTARE IL PAYLOAD
-    _LOGGER.error(">>> RICEVUTO WEBSOCKET SETTINGS SAVE: %s", msg)
-
-    store = hass.data[DOMAIN]["store"]
-    changes: dict = {}
-    for key in _SETTINGS_SAVE_FIELDS:
-        if key in msg:
-            changes[key] = msg[key]
-    # ... resto del codice ...
-
     """Clear a user cover override so automatic cover control resumes."""
     store = hass.data[DOMAIN]["store"]
     area_id = msg["area_id"]
