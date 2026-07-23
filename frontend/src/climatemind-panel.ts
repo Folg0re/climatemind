@@ -47,6 +47,8 @@ export class ClimateMindPanel extends LitElement {
   @state() private _showHiddenRooms = false;
   @state() private _controlMode: "mpc" | "bangbang" = "bangbang";
   @state() private _climateControlActive = true;
+  @state() private _centralHeatingEnabled = false;
+  @state() private _centralHeatingSchedule = "";
   @state() private _presenceEnabled = false;
   @state() private _valveProtectionEnabled = false;
   @state() private _anyoneHome = true;
@@ -750,6 +752,8 @@ export class ClimateMindPanel extends LitElement {
         group_by_floor: boolean;
         control_mode: "mpc" | "bangbang";
         climate_control_active: boolean;
+        central_heating_enabled: boolean;
+        central_heating_schedule: string;
         presence_enabled: boolean;
         anyone_home: boolean;
         presence_persons: string[];
@@ -768,6 +772,8 @@ export class ClimateMindPanel extends LitElement {
       this._groupByFloor = result.group_by_floor ?? false;
       this._controlMode = result.control_mode ?? "bangbang";
       this._climateControlActive = result.climate_control_active ?? true;
+      this._centralHeatingEnabled = result.central_heating_enabled ?? false;
+      this._centralHeatingSchedule = result.central_heating_schedule ?? "";
       this._presenceEnabled = result.presence_enabled ?? false;
       this._valveProtectionEnabled = result.valve_protection_enabled ?? false;
       this._anyoneHome = result.anyone_home ?? true;
