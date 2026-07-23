@@ -30,9 +30,6 @@ class WeatherManager:
             self._outdoor_forecast = []
             return []
 
-        # Calling get_forecasts on a missing/unavailable entity makes HA core
-        # log a warning (e.g. during startup before the weather integration
-        # has loaded, see #326) — skip until the entity is available.
         entity_state = self.hass.states.get(weather_entity)
         if entity_state is None or entity_state.state in ("unavailable", "unknown"):
             _LOGGER.debug(
@@ -51,16 +48,24 @@ class WeatherManager:
                 blocking=True,
                 return_response=True,
             )
-            entity_data = response.get(weather_entity, {}) if isinstance(response, dict) else {}  # type: ignore[union-attr]
-            forecasts = entity_data.get("forecast", []) if isinstance(entity_data, dict) else []
-            if isinstance(forecasts, list) and forecasts:
-                result = self._convert_forecast_temps(forecasts)  # type: ignore[arg-type]
-                self._outdoor_forecast = result
-                return result
-        except Exception:  # noqa: BLE001
-            _LOGGER.debug(
-                "weather.get_forecasts service call failed for %s, falling back to state attributes",
+
+            # Gestione robusta della risposta del servizio nelle varie versioni di HA
+            if isinstance(response, dict):
+                entity_data = response.get(weather_entity, {})
+                if not entity_data and len(response) == 1:
+                    # Prende il primo dizionario se la chiave dell'entità varia leggermente
+                    entity_data = list(response.values())[0]
+
+                forecasts = entity_data.get("forecast", []) if isinstance(entity_data, dict) else []
+                if isinstance(forecasts, list) and forecasts:
+                    result = self._convert_forecast_temps(forecasts)
+                    self._outdoor_forecast = result
+                    return result
+        except Exception as err:
+            _LOGGER.warning(
+                "weather.get_forecasts service call failed for %s: %s. Falling back to state attributes",
                 weather_entity,
+                err,
             )
 
         # Fallback: read deprecated state attribute (older HA versions)
@@ -73,6 +78,7 @@ class WeatherManager:
             result = self._convert_forecast_temps(forecast)
             self._outdoor_forecast = result
             return result
+
         self._outdoor_forecast = []
         return []
 

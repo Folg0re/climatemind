@@ -397,8 +397,6 @@ export class RsRoomDetail extends LitElement {
 
   render() {
     if (!this.area) return nothing;
-// eslint-disable-next-line no-console
-    console.log("[ClimateMind Debug] centralHeatingEnabled:", this.centralHeatingEnabled, "isOutdoor:", this._isOutdoor);
 
     const centralHeatingActive = this.centralHeatingEnabled;
 
@@ -528,7 +526,7 @@ export class RsRoomDetail extends LitElement {
                   ></rs-sensor-section>
                 </rs-section-card>
 
-                <rs-section-card icon="mdi:tune" heading="Calibrazione">
+<rs-section-card icon="mdi:tune" heading="Calibrazione">
                   <div class="calibration-row">
                     <span>Offset Temperatura (°C)</span>
                     <input
@@ -544,21 +542,65 @@ export class RsRoomDetail extends LitElement {
                     ? html`
                         <div
                           class="calibration-row"
-                          style="margin-top: 12px; border-top: 1px solid var(--divider-color); pt: 8px;"
+                          style="margin-top: 12px; border-top: 1px solid var(--divider-color); padding-top: 12px; flex-direction: column; align-items: stretch; gap: 8px;"
                         >
-                          <div style="display: flex; flex-direction: column;">
-                            <span style="font-size: 13px; font-weight: 500;"
-                              >Valvola Manuale (0-5)</span
-                            >
-                            <span class="field-hint">Helper input_number associato</span>
+                          <div style="display: flex; align-items: center; justify-content: space-between;">
+                            <div style="display: flex; flex-direction: column;">
+                              <span style="font-size: 13px; font-weight: 500;">Valvola Manuale (0-5)</span>
+                              <span class="field-hint">
+                                ${this._manualValveEntity
+                                  ? this.hass.states[this._manualValveEntity]?.attributes.friendly_name || this._manualValveEntity
+                                  : "Nessun helper associato"}
+                              </span>
+                            </div>
+                            <!-- Pulsante stile matitina per aprire/chiudere il picker -->
+                            <ha-icon-button
+                              icon="mdi:pencil"
+                              style="--mdc-icon-size: 18px; color: var(--secondary-text-color);"
+                              @click=${() => {
+                                const picker = this.shadowRoot?.getElementById("valve-picker-container");
+                                if (picker) picker.style.display = picker.style.display === "none" ? "block" : "none";
+                              }}
+                            ></ha-icon-button>
                           </div>
-                          <ha-entity-picker
-                            .hass=${this.hass}
-                            .value=${this._manualValveEntity}
-                            .includeDomains=${["input_number"]}
-                            @value-changed=${this._onManualValveEntityChanged}
-                            style="width: 180px;"
-                          ></ha-entity-picker>
+
+                          <!-- Se l'entità è associata, mostriamo lo slider interattivo del valore -->
+                          ${this._manualValveEntity && this.hass.states[this._manualValveEntity]
+                            ? html`
+                                <div style="display: flex; align-items: center; gap: 12px; background: var(--secondary-background-color, rgba(0,0,0,0.05)); padding: 8px 12px; border-radius: 8px;">
+                                  <ha-icon icon="mdi:radiator" style="color: var(--primary-color);"></ha-icon>
+                                  <span style="font-weight: 500; min-width: 40px; text-align: right;">
+                                    ${Number(this.hass.states[this._manualValveEntity].state).toFixed(2)}
+                                  </span>
+                                  <input
+                                    type="range"
+                                    min="0"
+                                    max="5"
+                                    step="0.25"
+                                    style="flex: 1; accent-color: var(--primary-color);"
+                                    .value=${this.hass.states[this._manualValveEntity].state}
+                                    @input=${(e: Event) => {
+                                      const val = (e.target as HTMLInputElement).value;
+                                      this.hass.callService("input_number", "set_value", {
+                                        entity_id: this._manualValveEntity,
+                                        value: parseFloat(val),
+                                      });
+                                    }}
+                                  />
+                                </div>
+                              `
+                            : nothing}
+
+                          <!-- Contenitore a scomparsa per selezionare/modificare l'entity picker -->
+                          <div id="valve-picker-container" style="display: ${this._manualValveEntity ? 'none' : 'block'}; margin-top: 4px;">
+                            <ha-entity-picker
+                              .hass=${this.hass}
+                              .value=${this._manualValveEntity}
+                              .includeDomains=${["input_number"]}
+                              @value-changed=${this._onManualValveEntityChanged}
+                              style="width: 100%;"
+                            ></ha-entity-picker>
+                          </div>
                         </div>
                       `
                     : nothing}

@@ -23,12 +23,23 @@ class ForecastFeeder:
         current_temp = getattr(self._weather_provider, "get_current_temperature", lambda: None)()
         forecast_method = getattr(self._weather_provider, "async_get_hourly_forecast", None)
         forecast_series: list[float] = []
+
         if forecast_method is not None:
             forecast_series = await forecast_method(horizon_hours)
 
+        fallback_val = current_temp if current_temp is not None else 20.0
+
         if not forecast_series:
             _LOGGER.debug("Forecast meteo non disponibile. Fallback su temperatura istantanea.")
-            return [current_temp or 20.0] * horizon_hours
+            return [fallback_val] * horizon_hours
+
+        # Garanzia di lunghezza: se il forecast è più corto dell'orizzonte, lo completiamo
+        # con l'ultimo valore valido; se è più lungo, lo troncamos.
+        if len(forecast_series) < horizon_hours:
+            last_val = forecast_series[-1] if forecast_series else fallback_val
+            forecast_series.extend([last_val] * (horizon_hours - len(forecast_series)))
+        elif len(forecast_series) > horizon_hours:
+            forecast_series = forecast_series[:horizon_hours]
 
         return forecast_series
 
