@@ -48,8 +48,6 @@ class WeatherManager:
                 blocking=True,
                 return_response=True,
             )
-# --- AGGIUNTO PER DIAGNOSTICA ---
-            _LOGGER.info("DEBUG WEATHER RESPONSE for %s -> Type: %s, Data: %s", weather_entity, type(response), response)
             # Gestione robusta della risposta del servizio nelle varie versioni di HA
             if isinstance(response, dict):
                 entity_data = response.get(weather_entity, {})
