@@ -4678,6 +4678,14 @@
                 </rs-section-card>
 
 <rs-section-card icon="mdi:tune" heading="Calibrazione">
+                  <ha-icon-button
+                    slot="header-extras"
+                    icon="mdi:pencil"
+                    style="--mdc-icon-size: 18px; color: var(--secondary-text-color);"
+                    title="Modifica entità valvola"
+                    @click=${()=>{let e=this.shadowRoot?.getElementById(`valve-picker-container`);e&&(e.style.display=e.style.display===`none`?`block`:`none`)}}
+                  ></ha-icon-button>
+
                   <div class="calibration-row">
                     <span>Offset Temperatura (°C)</span>
                     <input
@@ -4694,22 +4702,13 @@
                           class="calibration-row"
                           style="margin-top: 12px; border-top: 1px solid var(--divider-color); padding-top: 12px; flex-direction: column; align-items: stretch; gap: 8px;"
                         >
-                          <div style="display: flex; align-items: center; justify-content: space-between;">
-                            <div style="display: flex; flex-direction: column;">
-                              <span style="font-size: 13px; font-weight: 500;">Valvola Manuale (0-5)</span>
-                              <span class="field-hint">
-                                ${this._manualValveEntity?this.hass.states[this._manualValveEntity]?.attributes.friendly_name||this._manualValveEntity:`Nessun helper associato`}
-                              </span>
-                            </div>
-                            <!-- Pulsante stile matitina per aprire/chiudere il picker -->
-                            <ha-icon-button
-                              icon="mdi:pencil"
-                              style="--mdc-icon-size: 18px; color: var(--secondary-text-color);"
-                              @click=${()=>{let e=this.shadowRoot?.getElementById(`valve-picker-container`);e&&(e.style.display=e.style.display===`none`?`block`:`none`)}}
-                            ></ha-icon-button>
+                          <div style="display: flex; flex-direction: column;">
+                            <span style="font-size: 13px; font-weight: 500;">Valvola Manuale (0-5)</span>
+                            <span class="field-hint">
+                              ${this._manualValveEntity?this.hass.states[this._manualValveEntity]?.attributes.friendly_name||this._manualValveEntity:`Nessun helper associato`}
+                            </span>
                           </div>
 
-                          <!-- Se l'entità è associata, mostriamo lo slider interattivo del valore -->
                           ${this._manualValveEntity&&this.hass.states[this._manualValveEntity]?g`
                                 <div style="display: flex; align-items: center; gap: 12px; background: var(--secondary-background-color, rgba(0,0,0,0.05)); padding: 8px 12px; border-radius: 8px;">
                                   <ha-icon icon="mdi:radiator" style="color: var(--primary-color);"></ha-icon>
@@ -4728,7 +4727,6 @@
                                 </div>
                               `:_}
 
-                          <!-- Contenitore a scomparsa per selezionare/modificare l'entity picker -->
                           <div id="valve-picker-container" style="display: ${this._manualValveEntity?`none`:`block`}; margin-top: 4px;">
                             <ha-entity-picker
                               .hass=${this.hass}
