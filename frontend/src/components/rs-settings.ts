@@ -35,6 +35,8 @@ export class RsSettings extends LitElement {
 
   @state() private _groupByFloor = false;
   @state() private _climateControlActive = true;
+  @state() private _centralHeatingEnabled = false;
+  @state() private _centralHeatingSchedule = "";
   @state() private _learningDisabledRooms: string[] = [];
   @state() private _outdoorTempSensor = "";
   @state() private _outdoorHumiditySensor = "";
@@ -85,9 +87,12 @@ export class RsSettings extends LitElement {
       const result = await this.hass.callWS<{ settings: GlobalSettings }>({
         type: "climatemind/settings/get",
       });
-      const s = result.settings;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- settings payload includes custom fields
+      const s = result.settings as Record<string, any>;
       this._groupByFloor = s.group_by_floor ?? false;
       this._climateControlActive = s.climate_control_active ?? true;
+      this._centralHeatingEnabled = s.central_heating_enabled ?? false;
+      this._centralHeatingSchedule = s.central_heating_schedule ?? "";
       this._learningDisabledRooms = s.learning_disabled_rooms ?? [];
       this._outdoorTempSensor = s.outdoor_temp_sensor ?? "";
       this._outdoorHumiditySensor = s.outdoor_humidity_sensor ?? "";
@@ -149,6 +154,8 @@ export class RsSettings extends LitElement {
           .hass=${this.hass}
           .groupByFloor=${this._groupByFloor}
           .climateControlActive=${this._climateControlActive}
+          .centralHeatingEnabled=${this._centralHeatingEnabled}
+          .centralHeatingSchedule=${this._centralHeatingSchedule}
           @setting-changed=${this._onSettingChanged}
         ></rs-settings-general>
       </rs-settings-panel>
@@ -332,6 +339,8 @@ export class RsSettings extends LitElement {
         type: "climatemind/settings/save",
         group_by_floor: this._groupByFloor,
         climate_control_active: this._climateControlActive,
+        central_heating_enabled: this._centralHeatingEnabled,
+        central_heating_schedule: this._centralHeatingSchedule,
         learning_disabled_rooms: this._learningDisabledRooms,
         outdoor_temp_sensor: this._outdoorTempSensor,
         outdoor_humidity_sensor: this._outdoorHumiditySensor,
