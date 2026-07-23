@@ -1,4 +1,4 @@
-"""Room persistence layer for ClimateMind."""
+"""store.py Room persistence layer for ClimateMind."""
 
 from __future__ import annotations
 
@@ -222,6 +222,7 @@ class ClimateMindStore:
             "eco_heat": eco_heat,
             "eco_cool": config.get("eco_cool", DEFAULT_ECO_COOL),
             "calibration_offset": config.get("calibration_offset", 0.0),
+            "manual_valve_entity": config.get("manual_valve_entity", ""),  # <-- Aggiunto default per la valvola manuale
             "presence_persons": config.get("presence_persons", []),
             "display_name": config.get("display_name", ""),
             "heating_system_type": config.get("heating_system_type", ""),

@@ -79,6 +79,7 @@ _ROOM_SAVE_FIELDS = (
     "eco_heat",
     "eco_cool",
     "calibration_offset",
+    "manual_valve_entity",  # <-- Aggiunto
     "presence_persons",
     "display_name",
     "heating_system_type",
@@ -117,6 +118,8 @@ _SETTINGS_SAVE_FIELDS = (
     "weather_entity",
     "outdoor_unavailable_notify",
     "climate_control_active",
+    "central_heating_enabled",    # <-- Aggiunto
+    "central_heating_schedule",  # <-- Aggiunto
     "learning_disabled_rooms",
     "hidden_rooms",
     "vacation_temp",
@@ -282,6 +285,8 @@ async def websocket_list_rooms(
             "group_by_floor": settings.get("group_by_floor", False),
             "control_mode": settings.get("control_mode", "bangbang"),
             "climate_control_active": settings.get("climate_control_active", True),
+            "central_heating_enabled": settings.get("central_heating_enabled", False),    # <-- Aggiunto
+            "central_heating_schedule": settings.get("central_heating_schedule", ""),  # <-- Aggiunto
             "presence_enabled": settings.get("presence_enabled", False),
             "presence_persons": settings.get("presence_persons", []),
             "presence_away_action": settings.get("presence_away_action", "eco"),
@@ -335,6 +340,7 @@ async def websocket_list_rooms(
         vol.Optional("eco_heat"): vol.Coerce(float),
         vol.Optional("eco_cool"): vol.Coerce(float),
         vol.Optional("calibration_offset"): vol.Coerce(float),
+        vol.Optional("manual_valve_entity"): str,  # <-- Aggiunto schema validazione
         vol.Optional("presence_persons"): [str],
         vol.Optional("display_name"): str,
         vol.Optional("heating_system_type"): vol.In(["", "radiator", "underfloor"]),
@@ -600,6 +606,8 @@ async def websocket_get_settings(
         vol.Optional("weather_entity"): str,
         vol.Optional("outdoor_unavailable_notify"): bool,
         vol.Optional("climate_control_active"): bool,
+        vol.Optional("central_heating_enabled"): bool,    # <-- Aggiunto schema validazione
+        vol.Optional("central_heating_schedule"): str,  # <-- Aggiunto schema validazione
         vol.Optional("learning_disabled_rooms"): [str],
         vol.Optional("hidden_rooms"): [str],
         vol.Optional("prediction_enabled"): bool,
