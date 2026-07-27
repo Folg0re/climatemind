@@ -204,6 +204,7 @@ class ClimateMindCoordinator(DataUpdateCoordinator):
         self._climate_entity_areas: set[str] = set()
 
         self._last_sent_commands: dict[str, dict] = {}
+        self._last_correction_ts: dict[str, float] = {}  # Cooldown tracking per disallineamenti di stato
         self._schedule_blocks_cache: dict[str, dict] = {}
         self.async_add_entities: Any = None
         self.async_add_switch_entities: Any = None
@@ -743,9 +744,7 @@ class ClimateMindCoordinator(DataUpdateCoordinator):
             or abs(last_cmd.get("power_fraction", 0) - current_cmd["power_fraction"]) > 0.05
         )
 
-        # --- CONTROLLO STATO REALE SU HOME ASSISTANT ---
-        # Verifica se lo stato effettivo sul campo (es. condizionatore spento o in fan_only)
-        # non corrisponde a ciò che l'MPC comanda, forzando l'invio del comando (rompe il loop di skipping).
+        # --- CONTROLLO STATO REALE SU HOME ASSISTANT CON COOLDOWN ---
         ac_eids = get_ac_eids(room.get("devices", []))
         real_state_mismatch = False
         for eid in ac_eids:
@@ -761,8 +760,12 @@ class ClimateMindCoordinator(DataUpdateCoordinator):
                     real_state_mismatch = True
                     break
 
-        if real_state_mismatch:
+        # Applica cooldown (es. 60 secondi) per evitare lo spam continuo di comandi e bip ogni 30s
+        now = time.monotonic()
+        last_corr = self._last_correction_ts.get(area_id, 0.0)
+        if real_state_mismatch and (now - last_corr > 60.0):
             has_changed = True
+            self._last_correction_ts[area_id] = now
 
         if not climate_active or waiting_for_data or current_temp is None:
             mode = MODE_IDLE
@@ -1476,6 +1479,7 @@ class ClimateMindCoordinator(DataUpdateCoordinator):
         self._model_manager.remove_room(area_id)
         self._heat_source_states.pop(area_id, None)
         self._last_sent_commands.pop(area_id, None)
+        self._last_correction_ts.pop(area_id, None)
         if self._history_store:
             await self.hass.async_add_executor_job(self._history_store.remove_room, area_id)
 
@@ -1785,3 +1789,4 @@ class ClimateMindCoordinator(DataUpdateCoordinator):
             )
         except Exception:  # noqa: BLE001
             _LOGGER.warning("Master group '%s': action script '%s' failed", group.name, group.action_script, exc_info=True)
+
