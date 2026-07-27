@@ -744,8 +744,22 @@ class ClimateMindCoordinator(DataUpdateCoordinator):
             or abs(last_cmd.get("power_fraction", 0) - current_cmd["power_fraction"]) > 0.05
         )
 
-        # --- CONTROLLO STATO REALE SU HOME ASSISTANT CON COOLDOWN ---
+        # --- CONTROLLO STATO REALE SU HOME ASSISTANT CON FORZATURA E COOLDOWN ---
         ac_eids = get_ac_eids(room.get("devices", []))
+
+        # Interroga attivamente il cloud tramite Home Assistant per avere uno stato fresco
+        for eid in ac_eids:
+            try:
+                await self.hass.services.async_call(
+                    "homeassistant",
+                    "update_entity",
+                    {"entity_id": eid},
+                    blocking=False,
+                    context=make_climatemind_context(),
+                )
+            except Exception:
+                pass
+
         real_state_mismatch = False
         for eid in ac_eids:
             st = self.hass.states.get(eid)
@@ -760,12 +774,13 @@ class ClimateMindCoordinator(DataUpdateCoordinator):
                     real_state_mismatch = True
                     break
 
-        # Applica cooldown (es. 60 secondi) per evitare lo spam continuo di comandi e bip ogni 30s
+        # Cooldown di sicurezza esteso (es. 180econdi / 3 minuti) per prevenire invii ossessivi
         now = time.monotonic()
         last_corr = self._last_correction_ts.get(area_id, 0.0)
-        if real_state_mismatch and (now - last_corr > 60.0):
+        if real_state_mismatch and (now - last_corr > 180):
             has_changed = True
             self._last_correction_ts[area_id] = now
+            self._last_sent_commands.pop(area_id, None)
 
         if not climate_active or waiting_for_data or current_temp is None:
             mode = MODE_IDLE
@@ -1789,4 +1804,3 @@ class ClimateMindCoordinator(DataUpdateCoordinator):
             )
         except Exception:  # noqa: BLE001
             _LOGGER.warning("Master group '%s': action script '%s' failed", group.name, group.action_script, exc_info=True)
-
