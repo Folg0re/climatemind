@@ -743,6 +743,27 @@ class ClimateMindCoordinator(DataUpdateCoordinator):
             or abs(last_cmd.get("power_fraction", 0) - current_cmd["power_fraction"]) > 0.05
         )
 
+        # --- CONTROLLO STATO REALE SU HOME ASSISTANT ---
+        # Verifica se lo stato effettivo sul campo (es. condizionatore spento o in fan_only)
+        # non corrisponde a ciò che l'MPC comanda, forzando l'invio del comando (rompe il loop di skipping).
+        ac_eids = get_ac_eids(room.get("devices", []))
+        real_state_mismatch = False
+        for eid in ac_eids:
+            st = self.hass.states.get(eid)
+            if st is not None and st.state not in ("unavailable", "unknown"):
+                if mode == MODE_COOLING and st.state not in ("cool", "auto", "heat_cool"):
+                    real_state_mismatch = True
+                    break
+                elif mode == MODE_HEATING and st.state not in ("heat", "auto", "heat_cool"):
+                    real_state_mismatch = True
+                    break
+                elif mode == MODE_IDLE and st.state != "off":
+                    real_state_mismatch = True
+                    break
+
+        if real_state_mismatch:
+            has_changed = True
+
         if not climate_active or waiting_for_data or current_temp is None:
             mode = MODE_IDLE
             power_fraction = 0.0
