@@ -273,7 +273,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             self._model_loaded = True
 
         if self._history_store is None:
-            self._history_store = HistoryStore(self.hass.config.path(".storage/roommind_history"))
+            self._history_store = HistoryStore(self.hass.config.path(".storage/climatemind_history"))
 
         room_states: dict[str, dict] = {}
         outdoor_forecast = await self._weather_manager.async_read_forecast(settings)
