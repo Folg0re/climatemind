@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
+from pathlib import Path
 
 from homeassistant.components.frontend import async_register_built_in_panel
 from homeassistant.components.http import StaticPathConfig
@@ -38,6 +40,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Inizializzazione dell'entry point da configurazione HACS/UI."""
     hass.data.setdefault(DOMAIN, {})
 
+    await _async_migrate_storage(hass)
     store = ClimateMindStore(hass)
     await store.async_load()
     hass.data[DOMAIN]["store"] = store
@@ -104,6 +107,37 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await async_setup_services(hass)
 
     return True
+
+
+async def _async_migrate_storage(hass: HomeAssistant) -> None:
+    """Migrate storage and analytics history from earlier integration names."""
+    storage_dir = Path(hass.config.path(".storage"))
+    await hass.async_add_executor_job(_migrate_storage_sync, storage_dir)
+
+
+def _migrate_storage_sync(storage_dir: Path) -> None:
+    """Merge legacy history directories into the current analytics directory."""
+    new_history = storage_dir / "roommind_history"
+    legacy_dirs = (storage_dir / "climatemind_history", storage_dir / "roomsense_history")
+    existing_legacy_dirs = [path for path in legacy_dirs if path.is_dir()]
+    if not existing_legacy_dirs:
+        return
+
+    new_history.mkdir(parents=True, exist_ok=True)
+    for legacy_dir in existing_legacy_dirs:
+        for legacy_csv in legacy_dir.iterdir():
+            if not legacy_csv.is_file():
+                continue
+            target_csv = new_history / legacy_csv.name
+            if target_csv.exists():
+                legacy_lines = legacy_csv.read_text().splitlines()
+                target_lines = target_csv.read_text().splitlines()
+                if legacy_lines:
+                    target_csv.write_text("\n".join(target_lines + legacy_lines[1:]) + "\n")
+            else:
+                shutil.move(str(legacy_csv), str(target_csv))
+        shutil.rmtree(legacy_dir)
+        _LOGGER.info("Migrated analytics history from '%s'", legacy_dir.name)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
