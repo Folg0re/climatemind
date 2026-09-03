@@ -1,4 +1,4 @@
-"""DataUpdateCoordinator for ClimateMind."""
+"""DataUpdateCoordinator for RoomMind."""
 
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ from .const import (
     HEATING_BOOST_TARGET,
     HISTORY_ROTATE_CYCLES,
     HISTORY_WRITE_CYCLES,
-    MAX_PREDICTION_DELTA,  # noqa: F401
+    MAX_PREDICTION_DELTA,
     MAX_SENSOR_STALENESS,
     MODE_COOLING,
     MODE_HEATING,
@@ -43,7 +43,7 @@ from .const import (
     build_override_live,
     is_override_active,
     is_override_suppressed,
-    make_climatemind_context,
+    make_roommind_context,
 )
 from .control.mpc_controller import (
     DEFAULT_OUTDOOR_TEMP_FALLBACK,
@@ -150,8 +150,28 @@ def _get_area_name(hass: HomeAssistant, area_id: str) -> str:
         return area_id
 
 
-class ClimateMindCoordinator(DataUpdateCoordinator):
-    """Central coordinator for ClimateMind room data and state."""
+ROOM_ENTITY_SUFFIXES = (
+    "_target_temp",
+    "_mode",
+    "_override",
+    "_climate_control",
+    "_cover_auto",
+    "_cover_paused",
+)
+COVER_ENTITY_SUFFIXES = ("_cover_auto", "_cover_paused")
+
+
+def _match_room_entity(parts: str, rooms: dict) -> tuple[str, str] | None:
+    """Match parts to an owning room."""
+    for area_id in rooms:
+        for suffix in ROOM_ENTITY_SUFFIXES:
+            if parts == f"{area_id}{suffix}":
+                return area_id, suffix
+    return None
+
+
+class RoomMindCoordinator(DataUpdateCoordinator):
+    """Central coordinator for RoomMind room data and state."""
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         """Initialize the coordinator."""
@@ -204,7 +224,7 @@ class ClimateMindCoordinator(DataUpdateCoordinator):
         self._climate_entity_areas: set[str] = set()
 
         self._last_sent_commands: dict[str, dict] = {}
-        self._last_correction_ts: dict[str, float] = {}  # Cooldown tracking per disallineamenti di stato
+        self._last_correction_ts: dict[str, float] = {}
         self._schedule_blocks_cache: dict[str, dict] = {}
         self.async_add_entities: Any = None
         self.async_add_switch_entities: Any = None
@@ -214,14 +234,14 @@ class ClimateMindCoordinator(DataUpdateCoordinator):
     def _is_central_heating_active(self, settings: dict) -> bool:
         """Verifica se il riscaldamento centralizzato condominiale è attualmente abilitato e attivo via schedule."""
         if not settings.get("central_heating_enabled", False):
-            return True  # Se disabilitato globalmente, non fa da blocco
+            return True
         schedule_eid = settings.get("central_heating_schedule")
         if not schedule_eid:
             return True
         state = self.hass.states.get(schedule_eid)
         if state is None or state.state in ("unavailable", "unknown"):
-            return True  # Fallback aperto se l'entità schedule non è pronta
-        return state.state == "on"
+            return True
+        return bool(state.state == "on")
 
     async def _async_update_data(self) -> dict:
         """Fetch and compute state for all rooms."""
@@ -253,7 +273,7 @@ class ClimateMindCoordinator(DataUpdateCoordinator):
             self._model_loaded = True
 
         if self._history_store is None:
-            self._history_store = HistoryStore(self.hass.config.path(".storage/climatemind_history"))
+            self._history_store = HistoryStore(self.hass.config.path(".storage/roommind_history"))
 
         room_states: dict[str, dict] = {}
         outdoor_forecast = await self._weather_manager.async_read_forecast(settings)
@@ -314,6 +334,43 @@ class ClimateMindCoordinator(DataUpdateCoordinator):
                     )
                 except Exception:  # noqa: BLE001
                     _LOGGER.warning("History record failed for '%s'", area_id)
+
+                room_config = rooms.get(area_id, {})
+                if (
+                    current_temp is not None
+                    and self.outdoor_temp_effective is not None
+                    and not room_config.get("is_outdoor", False)
+                ):
+                    try:
+                        is_window_open = rs.get("window_open", False)
+                        if is_window_open:
+                            raw_pred = self._model_manager.predict_window_open(
+                                area_id,
+                                current_temp,
+                                self.outdoor_temp_effective,
+                                3.0,
+                            )
+                        else:
+                            model = self._model_manager.get_model(area_id)
+                            hp = rs.get("heating_power", 100) / 100.0
+                            Q = (
+                                hp * model.Q_heat
+                                if mode == "heating"
+                                else (-hp * model.Q_cool if mode == "cooling" else 0.0)
+                            )
+                            raw_pred = model.predict(
+                                current_temp,
+                                self.outdoor_temp_effective,
+                                Q,
+                                3.0,
+                                q_solar=self._current_q_solar * rs.get("shading_factor", 1.0),
+                            )
+                        clamped = max(
+                            current_temp - MAX_PREDICTION_DELTA, min(current_temp + MAX_PREDICTION_DELTA, raw_pred)
+                        )
+                        self._pending_predictions[area_id] = round(clamped, 2)
+                    except Exception:  # noqa: BLE001
+                        pass
 
         self._thermal_save_count += 1
         if self._thermal_save_count >= THERMAL_SAVE_CYCLES:
@@ -408,16 +465,18 @@ class ClimateMindCoordinator(DataUpdateCoordinator):
         sensor_id = settings.get("outdoor_temp_sensor") or "(not configured)"
         weather_eid = settings.get("weather_entity") or "(not configured)"
         message = (
-            "ClimateMind cannot read an outdoor temperature. Thermal model "
+            "RoomMind cannot read an outdoor temperature. Thermal model "
             "learning is paused for all rooms until a valid source returns.\n\n"
             f"• Outdoor sensor: `{sensor_id}`\n"
             f"• Weather entity: `{weather_eid}`"
         )
-        _LOGGER.warning("Outdoor temperature unavailable for %d cycles — EKF learning paused", self._outdoor_unavailable_cycles)
+        _LOGGER.warning(
+            "Outdoor temperature unavailable for %d cycles — EKF learning paused", self._outdoor_unavailable_cycles
+        )
         async_create_notification(
             self.hass,
             message,
-            title="ClimateMind: outdoor temperature unavailable",
+            title="RoomMind: outdoor temperature unavailable",
             notification_id=OUTDOOR_UNAVAILABLE_NOTIFICATION_ID,
         )
         self._outdoor_warning_sent = True
@@ -483,9 +542,12 @@ class ClimateMindCoordinator(DataUpdateCoordinator):
                 "active_heat_sources": None,
             }
 
-        mold_risk_level, mold_surface_rh, mold_prevention_active_room, mold_prevention_temp_delta = await self._evaluate_mold_risk(
-            area_id, current_temp, current_humidity, settings
-        )
+        (
+            mold_risk_level,
+            mold_surface_rh,
+            mold_prevention_active_room,
+            mold_prevention_temp_delta,
+        ) = await self._evaluate_mold_risk(area_id, current_temp, current_humidity, settings)
 
         from .utils.schedule_utils import (
             get_active_schedule_entity,
@@ -576,7 +638,6 @@ class ClimateMindCoordinator(DataUpdateCoordinator):
         # --- GESTIONE RISCALDAMENTO CENTRALIZZATO & VALVOLE MANUALI ---
         central_active = self._is_central_heating_active(settings)
 
-        # Lettura valvola manuale (0 - 5) se configurata per la stanza
         manual_valve_eid = room.get("manual_valve_entity")
         manual_valve_val = None
         if manual_valve_eid:
@@ -588,13 +649,11 @@ class ClimateMindCoordinator(DataUpdateCoordinator):
                     pass
         valve_factor = _get_manual_valve_factor(manual_valve_val)
 
-        # Se il riscaldamento centralizzato è spento via schedule o la valvola manuale è chiusa (0), blocchiamo il riscaldamento
         if mode == MODE_HEATING:
             if not central_active or valve_factor <= 0.0:
                 mode = MODE_IDLE
                 power_fraction = 0.0
             else:
-                # Scala la frazione di potenza in base all'apertura della testa manuale Danfoss
                 power_fraction = round(power_fraction * valve_factor, 2)
 
         climate_mode = room.get("climate_mode", "auto")
@@ -719,14 +778,18 @@ class ClimateMindCoordinator(DataUpdateCoordinator):
         if offset != 0.0:
             h_dev = targets.heat + offset if targets.heat is not None else None
             c_dev = targets.cool + offset if targets.cool is not None else None
+            rounded_heat = _round_down_to_int(h_dev)
+            rounded_cool = _round_down_to_int(c_dev)
             device_targets = TargetTemps(
-                heat=float(_round_down_to_int(h_dev)) if h_dev is not None else None,
-                cool=float(_round_down_to_int(c_dev)) if c_dev is not None else None,
+                heat=float(rounded_heat) if rounded_heat is not None else None,
+                cool=float(rounded_cool) if rounded_cool is not None else None,
             )
         else:
+            rounded_heat = _round_down_to_int(targets.heat)
+            rounded_cool = _round_down_to_int(targets.cool)
             device_targets = TargetTemps(
-                heat=float(_round_down_to_int(targets.heat)) if targets.heat is not None else None,
-                cool=float(_round_down_to_int(targets.cool)) if targets.cool is not None else None,
+                heat=float(rounded_heat) if rounded_heat is not None else None,
+                cool=float(rounded_cool) if rounded_cool is not None else None,
             )
 
         last_cmd = self._last_sent_commands.get(area_id, {})
@@ -747,7 +810,6 @@ class ClimateMindCoordinator(DataUpdateCoordinator):
         # --- CONTROLLO STATO REALE SU HOME ASSISTANT CON FORZATURA E COOLDOWN ---
         ac_eids = get_ac_eids(room.get("devices", []))
 
-        # Interroga attivamente il cloud tramite Home Assistant per avere uno stato fresco
         for eid in ac_eids:
             try:
                 await self.hass.services.async_call(
@@ -755,7 +817,7 @@ class ClimateMindCoordinator(DataUpdateCoordinator):
                     "update_entity",
                     {"entity_id": eid},
                     blocking=False,
-                    context=make_climatemind_context(),
+                    context=make_roommind_context(),
                 )
             except Exception:
                 pass
@@ -774,7 +836,6 @@ class ClimateMindCoordinator(DataUpdateCoordinator):
                     real_state_mismatch = True
                     break
 
-        # Cooldown di sicurezza esteso (es. 180econdi / 3 minuti) per prevenire invii ossessivi
         now = time.monotonic()
         last_corr = self._last_correction_ts.get(area_id, 0.0)
         if real_state_mismatch and (now - last_corr > 180):
@@ -1507,8 +1568,6 @@ class ClimateMindCoordinator(DataUpdateCoordinator):
         rooms = store.get_rooms()
         registry = er.async_get(self.hass)
 
-        always_valid = ("_target_temp", "_mode", "_override", "_climate_control")
-        cover_only = ("_cover_auto", "_cover_paused")
         global_uids = {f"{DOMAIN}_vacation"}
 
         to_remove: list[str] = []
@@ -1520,25 +1579,17 @@ class ClimateMindCoordinator(DataUpdateCoordinator):
                 continue
 
             parts = uid.removeprefix(f"{DOMAIN}_")
-            matched_area = None
-            for area_id in rooms:
-                if parts.startswith(f"{area_id}_"):
-                    matched_area = area_id
-                    break
+            matched = _match_room_entity(parts, rooms)
 
-            if matched_area is None:
+            if matched is None:
                 to_remove.append(entity_entry.entity_id)
                 continue
 
-            suffix = parts.removeprefix(f"{matched_area}")
+            matched_area, suffix = matched
             room = rooms[matched_area]
 
-            if suffix in always_valid:
-                continue
-            if suffix in cover_only and room.get("covers"):
-                continue
-
-            to_remove.append(entity_entry.entity_id)
+            if suffix in COVER_ENTITY_SUFFIXES and not room.get("covers"):
+                to_remove.append(entity_entry.entity_id)
 
         for eid in to_remove:
             _LOGGER.info("Removing orphaned entity: %s", eid)
@@ -1690,11 +1741,17 @@ class ClimateMindCoordinator(DataUpdateCoordinator):
                 "set_hvac_mode",
                 {"entity_id": wake_eid, "hvac_mode": "fan_only"},
                 blocking=True,
-                context=make_climatemind_context(),
+                context=make_roommind_context(),
             )
             self._compressor_manager.update_member(wake_eid, True)
         except Exception:  # noqa: BLE001
-            _LOGGER.warning("Master '%s' (group '%s'): failed to pre-activate zone '%s'", group.master_entity, group.name, wake_eid, exc_info=True)
+            _LOGGER.warning(
+                "Master '%s' (group '%s'): failed to pre-activate zone '%s'",
+                group.master_entity,
+                group.name,
+                wake_eid,
+                exc_info=True,
+            )
 
     async def _async_control_master_devices(
         self,
@@ -1761,7 +1818,7 @@ class ClimateMindCoordinator(DataUpdateCoordinator):
                                 "hvac_mode": resolved_mode,
                             },
                             blocking=True,
-                            context=make_climatemind_context(),
+                            context=make_roommind_context(),
                         )
                     except Exception:  # noqa: BLE001
                         continue
@@ -1800,7 +1857,12 @@ class ClimateMindCoordinator(DataUpdateCoordinator):
                     },
                 },
                 blocking=False,
-                context=make_climatemind_context(),
+                context=make_roommind_context(),
             )
         except Exception:  # noqa: BLE001
-            _LOGGER.warning("Master group '%s': action script '%s' failed", group.name, group.action_script, exc_info=True)
+            _LOGGER.warning(
+                "Master group '%s': action script '%s' failed", group.name, group.action_script, exc_info=True
+            )
+
+
+ClimateMindCoordinator = RoomMindCoordinator

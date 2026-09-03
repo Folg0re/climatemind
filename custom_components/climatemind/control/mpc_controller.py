@@ -23,7 +23,7 @@ from ..const import (
     DEFAULT_COMFORT_WEIGHT,
     DEFAULT_OUTDOOR_COOLING_MIN,
     DEFAULT_OUTDOOR_HEATING_MAX,
-    DOMAIN,
+    DOMAIN,  # noqa: F401
     HEATING_BOOST_TARGET,
     MODE_COOLING,
     MODE_HEATING,
@@ -38,6 +38,7 @@ from ..utils.device_utils import (
     DEFAULT_IDLE_SETBACK_OFFSET,
     IDLE_ACTION_FAN_ONLY,
     IDLE_ACTION_LOW,
+    IDLE_ACTION_OFF,
     IDLE_ACTION_SETBACK,
     get_ac_eids,
     get_direct_setpoint_eids,
@@ -375,6 +376,7 @@ async def async_idle_device(
     *,
     area_id: str = "unknown",
     targets: TargetTemps | None = None,
+    force_off: bool = False,
 ) -> None:
     """Idle a climate device per its configured idle_action.
 
@@ -383,8 +385,18 @@ async def async_idle_device(
     "setback"  -> keep current hvac_mode, shift target by offset
     "low"      -> lower setpoint to device min_temp, never send set_hvac_mode(off)
     Falls back to off when the configured action is not applicable.
+
+    ``force_off`` marks an explicit user request to shut the room down
+    (schedule_off_action / presence_away_action = "off").  It outranks the
+    per-device idle_action, which only expresses "no heat/cool demand right
+    now" — e.g. fan_only would keep an AC circulating air after the schedule
+    ended (#368).  IDLE_ACTION_LOW is exempt: it exists because some battery
+    Zigbee TRVs enter deep sleep in hvac_mode=off and lose later wake-up
+    commands (#183), and lowering to min_temp already stops all heat output.
     """
     idle_action, idle_fan_mode = get_idle_action(devices, entity_id)
+    if force_off and idle_action != IDLE_ACTION_LOW:
+        idle_action = IDLE_ACTION_OFF
 
     # Fallback low setpoint (in HA display units) for devices where min_temp
     # is not effective (e.g. Wavin Sentio with min_temp=0 or high min_temp).
@@ -751,6 +763,7 @@ class MPCController:
         self._shading_factor = shading_factor
         self.q_occupancy = q_occupancy
         self._idle_targets: TargetTemps | None = None
+        self._force_off = False
 
         s = settings or {}
         self.outdoor_cooling_min = s.get("outdoor_cooling_min", DEFAULT_OUTDOOR_COOLING_MIN)
@@ -810,38 +823,7 @@ class MPCController:
             q_occupancy=self.q_occupancy,
         )
         if pred_std < MPC_MAX_PREDICTION_STD and self._has_enough_data(can_heat, can_cool):
-            # Compute horizon blocks so we can optionally request a forecast
-            horizon_target = targets.heat if targets.heat is not None else targets.cool
-            horizon_blocks = self._compute_horizon_blocks(model, current_temp, horizon_target)
-
-            # Non-destructive forecast integration: try to obtain an hourly
-            # temperature horizon from the ForecastFeeder and expand it to
-            # block-level series. If anything fails, fall back to existing
-            # behaviour (_build_outdoor_series).
-            outdoor_override = None
-            try:
-                feeder = self.hass.data.get(DOMAIN, {}).get("forecast_feeder")
-                if feeder is not None:
-                    hours = math.ceil(horizon_blocks * PLAN_DT_MINUTES / 60)
-                    temps = await feeder.async_get_temperature_horizon(hours)
-                    if temps:
-                        blocks_per_hour = 60 // PLAN_DT_MINUTES
-                        series: list[float] = []
-                        for t in temps:
-                            series.extend([float(t)] * blocks_per_hour)
-                        # Prefer real-time sensor for the very first block
-                        if self.outdoor_temp is not None and series:
-                            series[0] = self.outdoor_temp
-                        # Pad if forecast shorter than horizon
-                        while len(series) < horizon_blocks:
-                            series.append(series[-1] if series else (self.outdoor_temp or 0.0))
-                        outdoor_override = series[:horizon_blocks]
-            except Exception:  # noqa: BLE001
-                _LOGGER.debug(
-                    "ForecastFeeder integration failed, falling back to default outdoor series", exc_info=True
-                )
-
-            return self._evaluate_mpc(current_temp, targets, outdoor_override=outdoor_override)
+            return self._evaluate_mpc(current_temp, targets)
         # Bang-bang fallback: binary control (1.0 power) for fast EKF learning
         mode = self._evaluate_bangbang(current_temp, targets)
         return mode, 1.0 if mode != MODE_IDLE else 0.0
@@ -891,7 +873,6 @@ class MPCController:
         self,
         current_temp: float | None,
         targets: TargetTemps,
-        outdoor_override: list[float] | None = None,
     ) -> tuple[str, float]:
         """MPC evaluation — use optimizer to determine action and power fraction."""
         if current_temp is None or (targets.heat is None and targets.cool is None):
@@ -904,13 +885,8 @@ class MPCController:
         horizon_target = targets.heat if targets.heat is not None else targets.cool
         horizon_blocks = self._compute_horizon_blocks(model, current_temp, horizon_target)
 
-        # Build outdoor series from forecast override if provided, otherwise
-        # use existing forecast->block expansion. This keeps the change
-        # non-destructive to callers that don't provide an override.
-        if outdoor_override is not None:
-            outdoor_series = outdoor_override[:horizon_blocks]
-        else:
-            outdoor_series = self._build_outdoor_series(horizon_blocks)
+        # Build outdoor series from forecast or current temp
+        outdoor_series = self._build_outdoor_series(horizon_blocks)
 
         # Build solar series from forecast cloud coverage
         solar_series = self._build_solar_series(horizon_blocks)
@@ -973,50 +949,6 @@ class MPCController:
             occupancy_series=occupancy_series,
         )
         self.last_plan = plan
-
-        # Metrics/logging: compare decision with/without forecast override
-        try:
-            if outdoor_override is not None:
-                # Compute fallback plan using default expansion (no override)
-                fallback_series = self._build_outdoor_series(horizon_blocks)
-                plan_no = optimizer.optimize(
-                    T_room=current_temp,
-                    T_outdoor_series=fallback_series,
-                    heat_target_series=heat_target_series,
-                    cool_target_series=cool_target_series,
-                    dt_minutes=PLAN_DT_MINUTES,
-                    solar_series=solar_series,
-                    residual_series=residual_series,
-                    occupancy_series=occupancy_series,
-                )
-                a_with = plan.get_current_action()
-                pf_with = plan.get_current_power_fraction()
-                a_without = plan_no.get_current_action()
-                pf_without = plan_no.get_current_power_fraction()
-                # Store a lightweight metric in hass.data for observability
-                metrics = self.hass.data.setdefault(DOMAIN, {}).setdefault(
-                    "mpc_forecast_metrics", {"total": 0, "diffs": 0}
-                )
-                metrics["total"] += 1
-                if a_with != a_without or abs(pf_with - pf_without) > 0.01:
-                    metrics["diffs"] += 1
-                    _LOGGER.info(
-                        "MPC forecast changed decision for %s: with=%s/%.2f without=%s/%.2f",
-                        self._area_id,
-                        a_with,
-                        pf_with,
-                        a_without,
-                        pf_without,
-                    )
-                else:
-                    _LOGGER.debug(
-                        "MPC forecast had no effect for %s: action=%s pf=%.2f",
-                        self._area_id,
-                        a_with,
-                        pf_with,
-                    )
-        except Exception:  # noqa: BLE001
-            _LOGGER.debug("Failed to compute MPC forecast-vs-no-forecast metrics", exc_info=True)
 
         action = plan.get_current_action()
         power_fraction = plan.get_current_power_fraction()
@@ -1297,8 +1229,15 @@ class MPCController:
         heat_source_plan: HeatSourcePlan | None = None,
         compressor_forced_on: set[str] | None = None,
         compressor_forced_off: set[str] | None = None,
+        force_off: bool = False,
     ) -> None:
-        """Apply the determined mode with proportional valve control."""
+        """Apply the determined mode with proportional valve control.
+
+        ``force_off`` signals that the room was shut down on purpose
+        (schedule_off_action / presence_away_action = "off") rather than merely
+        having no demand, so per-device idle_action must not keep devices
+        running (#368).
+        """
         _forced_on = compressor_forced_on or set()
         _forced_off = compressor_forced_off or set()
 
@@ -1314,6 +1253,7 @@ class MPCController:
         # Store targets for _call delegation (setback idle_action) — must be
         # after backward-compat conversion so legacy callers get a TargetTemps.
         self._idle_targets = targets
+        self._force_off = force_off
 
         # Resolve effective target_temp for the current mode
         if mode == MODE_HEATING:
@@ -1695,7 +1635,14 @@ class MPCController:
                         eid,
                     )
                     continue
-                await async_idle_device(self.hass, eid, self._devices, area_id=self._area_id, targets=targets)
+                await async_idle_device(
+                    self.hass,
+                    eid,
+                    self._devices,
+                    area_id=self._area_id,
+                    targets=targets,
+                    force_off=force_off,
+                )
 
     def _proportional_deadband(self, eid: str, current_temp: float | None, effective_target: float) -> float | None:
         """Deadband threshold for a proportional setpoint send, or None to disable.
@@ -1718,7 +1665,14 @@ class MPCController:
 
         # Delegate "turn off" to fallback-aware helper (handles heat-only TRVs)
         if service == "set_hvac_mode" and data.get("hvac_mode") == "off" and eid:
-            await async_idle_device(self.hass, eid, self._devices, area_id=self._area_id, targets=self._idle_targets)
+            await async_idle_device(
+                self.hass,
+                eid,
+                self._devices,
+                area_id=self._area_id,
+                targets=self._idle_targets,
+                force_off=self._force_off,
+            )
             return
 
         # Resolve hvac_mode to a supported mode (handles auto-only devices)

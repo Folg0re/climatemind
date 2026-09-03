@@ -54,6 +54,8 @@ export interface RoomLiveData {
   active_cover_schedule_index: number;
   active_heat_sources: string | null;
   learning_paused_reason: "outdoor_unavailable" | null;
+  compressor_protection_active: boolean;
+  compressor_protection_reason: "min_off" | "min_run" | null;
 }
 
 export type DeviceType = "trv" | "ac";
@@ -70,10 +72,7 @@ export interface DeviceConfig {
 }
 
 export type ConflictResolution =
-  | "heating_priority"
-  | "cooling_priority"
-  | "majority"
-  | "outdoor_temp";
+  "heating_priority" | "cooling_priority" | "majority" | "outdoor_temp";
 
 export interface CompressorGroup {
   id: string;

@@ -1,3 +1,11 @@
+from typing import Protocol
+
+
+class CentralHeating(Protocol):
+    def is_heat_available_now(self) -> bool:
+        """Return whether central heating is currently available."""
+
+
 class AdvisoryEngine:
     """Engine che traduce la potenza MPC in una posizione di valvola consigliata.
 
@@ -5,7 +13,7 @@ class AdvisoryEngine:
     intero nella gamma 0..max_position.
     """
 
-    def __init__(self, max_position: int = 5, central_heating: object | None = None) -> None:
+    def __init__(self, max_position: int = 5, central_heating: CentralHeating | None = None) -> None:
         self.max_position = max_position
         # central_heating: optional manager exposing is_heat_available_now()
         self._central_heating = central_heating

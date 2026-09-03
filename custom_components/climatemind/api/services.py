@@ -16,18 +16,25 @@ SERVICE_SET_OFFSET = "set_offset"
 SERVICE_APPLY_SCENE = "apply_scene"
 SERVICE_SET_GLOBAL_MODE = "set_global_mode"
 
-SCHEMA_SET_OFFSET = vol.Schema({
-    vol.Required("target_entity"): cv.entity_id,
-    vol.Required("offset"): vol.Coerce(float),
-})
+SCHEMA_SET_OFFSET = vol.Schema(
+    {
+        vol.Required("target_entity"): cv.entity_id,
+        vol.Required("offset"): vol.Coerce(float),
+    }
+)
 
-SCHEMA_APPLY_SCENE = vol.Schema({
-    vol.Required("scene_id"): cv.string,
-})
+SCHEMA_APPLY_SCENE = vol.Schema(
+    {
+        vol.Required("scene_id"): cv.string,
+    }
+)
 
-SCHEMA_SET_GLOBAL_MODE = vol.Schema({
-    vol.Required("mode"): vol.In(["per_room", "global_only"]),
-})
+SCHEMA_SET_GLOBAL_MODE = vol.Schema(
+    {
+        vol.Required("mode"): vol.In(["per_room", "global_only"]),
+    }
+)
+
 
 async def async_setup_services(hass: HomeAssistant) -> None:
     """Registra i servizi dell'integrazione."""

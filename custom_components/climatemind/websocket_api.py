@@ -118,7 +118,7 @@ _SETTINGS_SAVE_FIELDS = (
     "weather_entity",
     "outdoor_unavailable_notify",
     "climate_control_active",
-    "central_heating_enabled",    # <-- Aggiunto
+    "central_heating_enabled",  # <-- Aggiunto
     "central_heating_schedule",  # <-- Aggiunto
     "learning_disabled_rooms",
     "hidden_rooms",
@@ -264,6 +264,8 @@ async def websocket_list_rooms(
             "active_cover_schedule_index": live.get("active_cover_schedule_index", -1),
             "active_heat_sources": live.get("active_heat_sources"),
             "learning_paused_reason": learning_paused_reason,
+            "compressor_protection_active": live.get("compressor_protection_active", False),
+            "compressor_protection_reason": live.get("compressor_protection_reason"),
         }
         result[area_id] = room_data
 
@@ -285,7 +287,7 @@ async def websocket_list_rooms(
             "group_by_floor": settings.get("group_by_floor", False),
             "control_mode": settings.get("control_mode", "bangbang"),
             "climate_control_active": settings.get("climate_control_active", True),
-            "central_heating_enabled": settings.get("central_heating_enabled", False),    # <-- Aggiunto
+            "central_heating_enabled": settings.get("central_heating_enabled", False),  # <-- Aggiunto
             "central_heating_schedule": settings.get("central_heating_schedule", ""),  # <-- Aggiunto
             "presence_enabled": settings.get("presence_enabled", False),
             "presence_persons": settings.get("presence_persons", []),
@@ -606,7 +608,7 @@ async def websocket_get_settings(
         vol.Optional("weather_entity"): str,
         vol.Optional("outdoor_unavailable_notify"): bool,
         vol.Optional("climate_control_active"): bool,
-        vol.Optional("central_heating_enabled"): bool,    # <-- Aggiunto schema validazione
+        vol.Optional("central_heating_enabled"): bool,  # <-- Aggiunto schema validazione
         vol.Optional("central_heating_schedule"): str,  # <-- Aggiunto schema validazione
         vol.Optional("learning_disabled_rooms"): [str],
         vol.Optional("hidden_rooms"): [str],
@@ -932,7 +934,6 @@ async def websocket_covers_clear_override(
     connection: ActiveConnection,
     msg: dict,
 ) -> None:
-
     """Clear a user cover override so automatic cover control resumes."""
     store = hass.data[DOMAIN]["store"]
     area_id = msg["area_id"]

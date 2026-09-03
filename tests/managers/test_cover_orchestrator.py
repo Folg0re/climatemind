@@ -1535,7 +1535,9 @@ class TestOrientationGate:
         with (
             patch("custom_components.climatemind.managers.cover_orchestrator.solar_azimuth", return_value=250.0),
             patch("custom_components.climatemind.managers.cover_orchestrator.solar_elevation", return_value=20.0),
-            patch("custom_components.climatemind.managers.cover_orchestrator.surface_irradiance_factor", return_value=0.0),
+            patch(
+                "custom_components.climatemind.managers.cover_orchestrator.surface_irradiance_factor", return_value=0.0
+            ),
             patch.object(CoverOrchestrator, "_estimate_solar_peak_temp", return_value=26.0),
         ):
             await orch.async_process(
@@ -1567,7 +1569,9 @@ class TestOrientationGate:
         with (
             patch("custom_components.climatemind.managers.cover_orchestrator.solar_azimuth", return_value=180.0),
             patch("custom_components.climatemind.managers.cover_orchestrator.solar_elevation", return_value=45.0),
-            patch("custom_components.climatemind.managers.cover_orchestrator.surface_irradiance_factor", return_value=0.7),
+            patch(
+                "custom_components.climatemind.managers.cover_orchestrator.surface_irradiance_factor", return_value=0.7
+            ),
             patch.object(CoverOrchestrator, "_estimate_solar_peak_temp", return_value=26.0),
         ):
             await orch.async_process(

@@ -19,25 +19,27 @@ export class RsSettingsGeneral extends RsSettingsBase {
     const l = this.hass.language;
 
     return html`
-      ${this.hass.floors && Object.keys(this.hass.floors).length > 0
-        ? html`<div class="settings-section first">
-            <div class="toggle-row">
-              <div class="toggle-text">
-                <span class="toggle-label">${localize("settings.group_by_floor", l)}</span>
+      ${
+        this.hass.floors && Object.keys(this.hass.floors).length > 0
+          ? html`<div class="settings-section first">
+              <div class="toggle-row">
+                <div class="toggle-text">
+                  <span class="toggle-label">${localize("settings.group_by_floor", l)}</span>
+                </div>
+                <ha-switch
+                  .checked=${this.groupByFloor}
+                  @change=${(e: Event) =>
+                    this._fire("groupByFloor", (e.target as HTMLInputElement).checked)}
+                ></ha-switch>
               </div>
-              <ha-switch
-                .checked=${this.groupByFloor}
-                @change=${(e: Event) =>
-                  this._fire("groupByFloor", (e.target as HTMLInputElement).checked)}
-              ></ha-switch>
-            </div>
-          </div>`
-        : nothing}
+            </div>`
+          : nothing
+      }
 
       <div
-        class="settings-section ${this.hass.floors && Object.keys(this.hass.floors).length > 0
-          ? ""
-          : "first"}"
+        class="settings-section ${
+          this.hass.floors && Object.keys(this.hass.floors).length > 0 ? "" : "first"
+        }"
       >
         <div class="toggle-row">
           <div class="toggle-text">
@@ -56,7 +58,9 @@ export class RsSettingsGeneral extends RsSettingsBase {
         <div class="toggle-row">
           <div class="toggle-text">
             <span class="toggle-label">Riscaldamento Centralizzato / Condominiale</span>
-            <span class="toggle-hint">Abilita il vincolo orario basato sulla schedule condominiale</span>
+            <span class="toggle-hint"
+              >Abilita il vincolo orario basato sulla schedule condominiale</span
+            >
           </div>
           <ha-switch
             .checked=${this.centralHeatingEnabled}
@@ -69,25 +73,29 @@ export class RsSettingsGeneral extends RsSettingsBase {
           ></ha-switch>
         </div>
 
-        ${this.centralHeatingEnabled
-          ? html`
-              <div style="margin-top: 16px;">
-                <label style="display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; color: var(--secondary-text-color);">
-                  Schedule Condominiale (Orari Caldaia)
-                </label>
-                <ha-entity-picker
-                  .hass=${this.hass}
-                  .value=${this.centralHeatingSchedule}
-                  .includeDomains=${["schedule"]}
-                  @value-changed=${(e: CustomEvent) => {
-                    const val = e.detail.value;
-                    this.centralHeatingSchedule = val;
-                    this._fire("centralHeatingSchedule", val);
-                  }}
-                ></ha-entity-picker>
-              </div>
-            `
-          : nothing}
+        ${
+          this.centralHeatingEnabled
+            ? html`
+                <div style="margin-top: 16px;">
+                  <label
+                    style="display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; color: var(--secondary-text-color);"
+                  >
+                    Schedule Condominiale (Orari Caldaia)
+                  </label>
+                  <ha-entity-picker
+                    .hass=${this.hass}
+                    .value=${this.centralHeatingSchedule}
+                    .includeDomains=${["schedule"]}
+                    @value-changed=${(e: CustomEvent) => {
+                      const val = e.detail.value;
+                      this.centralHeatingSchedule = val;
+                      this._fire("centralHeatingSchedule", val);
+                    }}
+                  ></ha-entity-picker>
+                </div>
+              `
+            : nothing
+        }
       </div>
     `;
   }

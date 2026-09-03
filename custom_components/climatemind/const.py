@@ -7,7 +7,7 @@ from homeassistant.const import Platform
 from homeassistant.core import Context
 
 DOMAIN = "climatemind"
-VERSION = "0.1.0"
+VERSION = "0.5.0"
 
 # Platforms
 PLATFORMS = [Platform.SENSOR, Platform.SWITCH, Platform.BINARY_SENSOR, Platform.CLIMATE]
@@ -51,6 +51,9 @@ ROOMMIND_CONTEXT_ID = "climatemind"
 def make_climatemind_context() -> Context:
     """Create a HA Context tagged as originating from ClimateMind."""
     return Context(parent_id=ROOMMIND_CONTEXT_ID)
+
+
+make_roommind_context = make_climatemind_context
 
 
 class TargetTemps(NamedTuple):
