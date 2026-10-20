@@ -792,3 +792,98 @@ def test_approach_rate_widens_cooling_band_symmetrically():
     assert m1 == MODE_COOLING and m2 == MODE_COOLING
     assert pf_gentle < pf_full
     assert pf_gentle >= MIN_POWER_FRACTION
+
+
+# ---------------------------------------------------------------------------
+# Separate cooling min run (UFH + AC rooms)
+# ---------------------------------------------------------------------------
+
+
+def _first_run_length(actions: list[str], mode: str) -> int:
+    length = 0
+    for a in actions:
+        if a == mode:
+            length += 1
+        elif length:
+            break
+    return length
+
+
+def test_cooling_runs_use_their_own_min_run():
+    """UFH + AC room: the 30-min UFH run time must not stretch the AC's cooling runs."""
+    model = RCModel(C=1.0, U=0.5, Q_heat=4.0, Q_cool=6.0)
+    kwargs = {"can_heat": False, "can_cool": True, "min_run_blocks": 6}
+    series = {
+        "T_outdoor_series": [20.0] * 24,
+        "heat_target_series": [21.0] * 24,
+        "cool_target_series": [24.0] * 24,
+    }
+    ufh_only = MPCOptimizer(model, **kwargs).optimize(T_room=25.5, dt_minutes=5, **series)
+    split = MPCOptimizer(model, cool_min_run_blocks=2, **kwargs).optimize(T_room=25.5, dt_minutes=5, **series)
+    assert _first_run_length(ufh_only.actions, MODE_COOLING) >= 6
+    assert 2 <= _first_run_length(split.actions, MODE_COOLING) < 6
+
+
+def test_candidates_are_judged_over_their_own_min_run():
+    model = RCModel(C=2.0, U=50.0, Q_heat=1000.0, Q_cool=1500.0)
+    split = MPCOptimizer(model, min_run_blocks=6, cool_min_run_blocks=2)
+    ac_only = MPCOptimizer(model, min_run_blocks=2)
+    ufh = MPCOptimizer(model, min_run_blocks=6)
+    for opt in (split, ac_only, ufh):
+        opt._lookahead_blocks = 6
+    cool_args = (MODE_COOLING, 25.0, 30.0, 21.0, 24.0, [30.0] * 12, [21.0] * 12, [24.0] * 12, 5.0)
+    heat_args = (MODE_HEATING, 20.0, 5.0, 21.0, 24.0, [5.0] * 12, [21.0] * 12, [24.0] * 12, 5.0)
+    assert split._evaluate_action(*cool_args) == ac_only._evaluate_action(*cool_args)
+    assert split._evaluate_action(*cool_args) != ufh._evaluate_action(*cool_args)
+    assert split._evaluate_action(*heat_args) == ufh._evaluate_action(*heat_args)
+
+
+def test_cooling_min_run_defaults_to_the_heating_one():
+    opt = MPCOptimizer(RCModel(C=2.0, U=50.0, Q_heat=1000.0, Q_cool=1500.0), min_run_blocks=4)
+    assert opt._min_run_for(MODE_COOLING) == 4
+    assert opt._min_run_for(MODE_HEATING) == 4
+    assert MPCOptimizer(opt.model, min_run_blocks=4, cool_min_run_blocks=2)._min_run_for(MODE_COOLING) == 2
+
+
+def test_forced_min_run_continuation_plans_gentle_power():
+    """Past the target inside the min run the plan uses gentle power like the controller,
+    not full power: that predicted the room 1-3 K below the cool target (phantom undercooling)."""
+    model = RCModel(C=1.0, U=0.5, Q_heat=6.0, Q_cool=6.0)
+    plan = MPCOptimizer(model, can_heat=False, can_cool=True, min_run_blocks=6).optimize(
+        T_room=25.5,
+        T_outdoor_series=[20.0] * 24,
+        heat_target_series=[21.0] * 24,
+        cool_target_series=[24.0] * 24,
+        dt_minutes=5,
+    )
+    assert plan.actions[:6] == [MODE_COOLING] * 6
+    assert plan.power_fractions[0] == 1.0
+    assert all(MIN_POWER_FRACTION <= pf < 1.0 for pf in plan.power_fractions[2:6])
+    assert min(plan.temperatures[:7]) > 23.0  # full power reached ~21.4 by the end of the run
+
+
+def test_ufh_room_with_a_split_learned_rate_still_heats_far_below_target():
+    """UFH + split: the EKF shares one heating rate between screed and split (12.7 K/h here,
+    read from the sim at the lockout). Judging a UFH run at full power for the whole min run
+    plus afterglow predicted a 4 K overshoot, so idle won at 18.9 °C against 21 for hours."""
+    model = RCModel(C=1.0, U=0.0108, Q_heat=12.68, Q_cool=4.0, Q_solar=2.48)
+    kwargs = {
+        "can_heat": True,
+        "can_cool": False,
+        "w_comfort": 7.0,
+        "w_energy": 3.0,
+        "min_run_blocks": 6,
+        "heating_system_type": "underfloor",
+    }
+    series = {
+        "T_room": 18.9,
+        "T_outdoor_series": [-0.73] * 30,
+        "heat_target_series": [21.0] * 30,
+        "cool_target_series": [24.0] * 30,
+        "dt_minutes": 5,
+    }
+    mixed = MPCOptimizer(model, fast_heater_shares_model=True, **kwargs).optimize(**series)
+    assert mixed.actions[0] == MODE_HEATING
+    # a pure UFH room keeps the full-power run judgement (rate learned from the screed)
+    pure = MPCOptimizer(model, **kwargs).optimize(**series)
+    assert pure.actions[0] == "idle"

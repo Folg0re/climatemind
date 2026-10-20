@@ -45,6 +45,10 @@ export class RsRoomDetail extends LitElement {
   @property({ attribute: false }) public presencePersons: string[] = [];
   @property({ type: Boolean }) public climateControlActive = true;
   @property({ type: Boolean }) public valveProtectionEnabled = false;
+  @property({ type: Boolean }) public coilDryEnabled = false;
+  @property({ type: Number }) public coilDryMinutes = 20;
+  @property({ type: String }) public coilDryMode = "fan_only";
+  @property({ type: String }) public coilDryFanMode = "low";
   @property({ type: Boolean }) public centralHeatingEnabled = false; // <-- Aggiunto
 
   @state() private _devices: DeviceConfig[] = [];
@@ -817,6 +821,7 @@ export class RsRoomDetail extends LitElement {
             .ecoHeat=${this._ecoHeat}
             .ecoCool=${this._ecoCool}
             .climateMode=${this._climateMode}
+            .scheduleTempWarnings=${this.config?.live?.schedule_temp_warnings ?? []}
             .editing=${true}
             @schedules-changed=${this._onSchedulesChanged}
             @schedule-selector-changed=${this._onScheduleSelectorChanged}
@@ -859,6 +864,10 @@ export class RsRoomDetail extends LitElement {
             .selectedTempSensor=${this._selectedTempSensor}
             .valveProtectionExclude=${this._valveProtectionExclude}
             .valveProtectionEnabled=${this.valveProtectionEnabled}
+            .coilDryEnabledGlobal=${this.coilDryEnabled}
+            .coilDryMinutesGlobal=${this.coilDryMinutes}
+            .coilDryModeGlobal=${this.coilDryMode}
+            .coilDryFanModeGlobal=${this.coilDryFanMode}
             @device-changed=${this._onDeviceChanged}
             @valve-protection-exclude-toggle=${this._onValveProtectionExcludeToggle}
           ></rs-device-section>

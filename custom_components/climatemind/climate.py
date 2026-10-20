@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from homeassistant.components.climate import (
@@ -15,16 +16,21 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
     DEFAULT_COMFORT_COOL,
-    DEFAULT_COMFORT_HEAT,
     DOMAIN,
+    MAX_TARGET_TEMP,
+    MIN_TARGET_TEMP,
+    OVERRIDE_BOOST,
     OVERRIDE_CUSTOM,
+    OVERRIDE_TURN_ON_REFRESH_DELAY_S,
     is_override_active,
 )
 from .coordinator import ClimateMindCoordinator
+from .utils.schedule_utils import mask_override_band, override_preset_band
 
 
 def _round_to_step(val: float | None, step: float = 0.5) -> float | None:
@@ -67,8 +73,8 @@ class ClimateMindOverrideClimate(CoordinatorEntity, ClimateEntity):
     _attr_icon = "mdi:thermometer-alert"
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_target_temperature_step = 0.5
-    _attr_min_temp = 5.0
-    _attr_max_temp = 35.0
+    _attr_min_temp = MIN_TARGET_TEMP
+    _attr_max_temp = MAX_TARGET_TEMP
 
     def __init__(self, coordinator: ClimateMindCoordinator, area_id: str) -> None:
         super().__init__(coordinator)
@@ -76,6 +82,27 @@ class ClimateMindOverrideClimate(CoordinatorEntity, ClimateEntity):
         self._attr_unique_id = f"{DOMAIN}_{area_id}_override"
         self._attr_name = f"{area_id} Override"
         self.entity_id = f"climate.{DOMAIN}_{area_id}_override"
+        self._cancel_deferred_refresh: Callable[[], None] | None = None
+
+    async def async_will_remove_from_hass(self) -> None:
+        self._drop_deferred_refresh()
+        await super().async_will_remove_from_hass()
+
+    def _drop_deferred_refresh(self) -> None:
+        if self._cancel_deferred_refresh is not None:
+            self._cancel_deferred_refresh()
+            self._cancel_deferred_refresh = None
+
+    async def _refresh_after_deferral(self, _now: Any) -> None:
+        self._cancel_deferred_refresh = None
+        self.coordinator.clear_override_seed(self._area_id)
+        await self.coordinator.async_request_refresh()
+
+    async def _request_refresh(self) -> None:
+        """Refresh now; the stored override holds the caller's values, not a seed."""
+        self._drop_deferred_refresh()
+        self.coordinator.clear_override_seed(self._area_id)
+        await self.coordinator.async_request_refresh()
 
     def _room(self) -> dict | None:
         store = self.coordinator.hass.data[DOMAIN]["store"]
@@ -91,6 +118,26 @@ class ClimateMindOverrideClimate(CoordinatorEntity, ClimateEntity):
         if room is None:
             return False
         return is_override_active(room)
+
+    def _current_band(self) -> tuple[float | None, float | None]:
+        """Return the (heat, cool) band currently in force for this room.
+
+        An active override wins. Otherwise it is the band the coordinator resolved
+        last cycle (minus mold prevention, which is not part of the user's band).
+        Falls back to the comfort band when no live targets exist yet or the room
+        is forced off.
+        """
+        room = self._room() or {}
+        if is_override_active(room):
+            return room.get("override_heat"), room.get("override_cool")
+        live = ((self.coordinator.data or {}).get("rooms") or {}).get(self._area_id) or {}
+        heat = live.get("heat_target")
+        cool = live.get("cool_target")
+        if heat is None and cool is None:
+            return override_preset_band(room, OVERRIDE_BOOST)
+        if heat is not None and live.get("mold_prevention_active"):
+            heat -= live.get("mold_prevention_delta") or 0
+        return heat, cool
 
     @property
     def supported_features(self) -> ClimateEntityFeature:
@@ -181,8 +228,20 @@ class ClimateMindOverrideClimate(CoordinatorEntity, ClimateEntity):
         single = kwargs.get(ATTR_TEMPERATURE)
 
         if low is not None or high is not None:
-            heat = (low - offset) if low is not None else None
-            cool = (high - offset) if high is not None else None
+            heat, cool = self._current_band()
+            if low is not None:
+                heat = low - offset
+            if high is not None:
+                cool = high - offset
+            if mode == "heat_only":
+                cool = None
+            elif mode == "cool_only":
+                heat = None
+            elif heat is not None and cool is not None and heat > cool:
+                if low is not None:
+                    cool = heat
+                else:
+                    heat = cool
         elif single is not None:
             adjusted_single = single - offset
             if mode == "cool_only":
@@ -204,7 +263,7 @@ class ClimateMindOverrideClimate(CoordinatorEntity, ClimateEntity):
                 "override_type": OVERRIDE_CUSTOM,
             },
         )
-        await self.coordinator.async_request_refresh()
+        await self._request_refresh()
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set HVAC mode: OFF clears override, any other mode activates it."""
@@ -220,10 +279,9 @@ class ClimateMindOverrideClimate(CoordinatorEntity, ClimateEntity):
                 },
             )
         elif not self._is_override_active():
-            room = self._room() or {}
-            mode = self._climate_mode()
-            heat = room.get("comfort_heat", DEFAULT_COMFORT_HEAT) if mode != "cool_only" else None
-            cool = room.get("comfort_cool", DEFAULT_COMFORT_COOL) if mode != "heat_only" else None
+            heat, cool = mask_override_band(*self._current_band(), self._climate_mode())
+            # Marked before the write so a coordinator tick can never see the seed unflagged.
+            self.coordinator.note_override_seed(self._area_id)
             await store.async_update_room(
                 self._area_id,
                 {
@@ -233,4 +291,19 @@ class ClimateMindOverrideClimate(CoordinatorEntity, ClimateEntity):
                     "override_type": OVERRIDE_CUSTOM,
                 },
             )
-        await self.coordinator.async_request_refresh()
+            # The seed only exists so the entity reads as on. Callers switch it on and
+            # then send the real targets; evaluating the seed in between can start
+            # the AC against the outdoor gate, which an override lifts (#447). The
+            # follow-up set_temperature refreshes right away; a bare turn_on still
+            # gets its refresh after the grace period.
+            self.async_write_ha_state()
+            self._drop_deferred_refresh()
+            self._cancel_deferred_refresh = async_call_later(
+                self.coordinator.hass, OVERRIDE_TURN_ON_REFRESH_DELAY_S, self._refresh_after_deferral
+            )
+            return
+        elif self.coordinator.is_override_seed_pending(self._area_id):
+            # A repeated turn_on on the fresh seed must not lift the masking early (#447);
+            # the running timer refreshes once the grace period ends.
+            return
+        await self._request_refresh()

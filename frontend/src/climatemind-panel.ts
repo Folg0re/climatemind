@@ -45,12 +45,16 @@ export class ClimateMindPanel extends LitElement {
   @state() private _vacationUntil: number | null = null;
   @state() private _hiddenRooms: string[] = [];
   @state() private _showHiddenRooms = false;
-  @state() private _controlMode: "mpc" | "bangbang" = "bangbang";
+  @state() private _controlMode: "mpc" | "bangbang" = "mpc";
   @state() private _climateControlActive = true;
   @state() private _centralHeatingEnabled = false;
   @state() private _centralHeatingSchedule = "";
   @state() private _presenceEnabled = false;
   @state() private _valveProtectionEnabled = false;
+  @state() private _coilDryEnabled = false;
+  @state() private _coilDryMinutes = 20;
+  @state() private _coilDryMode = "fan_only";
+  @state() private _coilDryFanMode = "low";
   @state() private _anyoneHome = true;
   @state() private _presencePersons: string[] = [];
   @state() private _presenceAwayAction: "eco" | "off" = "eco";
@@ -790,6 +794,10 @@ export class ClimateMindPanel extends LitElement {
         presence_away_action: "eco" | "off";
         schedule_off_action: "eco" | "off";
         valve_protection_enabled: boolean;
+        coil_dry_enabled: boolean;
+        coil_dry_minutes: number;
+        coil_dry_mode: string;
+        coil_dry_fan_mode: string;
       }>({
         type: "climatemind/rooms/list",
       });
@@ -800,12 +808,16 @@ export class ClimateMindPanel extends LitElement {
       this._hiddenRooms = result.hidden_rooms ?? [];
       this._roomOrder = result.room_order ?? [];
       this._groupByFloor = result.group_by_floor ?? false;
-      this._controlMode = result.control_mode ?? "bangbang";
+      this._controlMode = result.control_mode ?? "mpc";
       this._climateControlActive = result.climate_control_active ?? true;
       this._centralHeatingEnabled = result.central_heating_enabled ?? false;
       this._centralHeatingSchedule = result.central_heating_schedule ?? "";
       this._presenceEnabled = result.presence_enabled ?? false;
       this._valveProtectionEnabled = result.valve_protection_enabled ?? false;
+      this._coilDryEnabled = result.coil_dry_enabled ?? false;
+      this._coilDryMinutes = result.coil_dry_minutes ?? 20;
+      this._coilDryMode = result.coil_dry_mode ?? "fan_only";
+      this._coilDryFanMode = result.coil_dry_fan_mode ?? "low";
       this._anyoneHome = result.anyone_home ?? true;
       this._presencePersons = result.presence_persons ?? [];
       this._presenceAwayAction = result.presence_away_action ?? "eco";

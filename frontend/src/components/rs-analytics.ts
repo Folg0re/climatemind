@@ -15,7 +15,7 @@ export class RsAnalytics extends LitElement {
   @property({ attribute: false }) public hass!: HomeAssistant;
   @property({ type: Object }) public rooms: Record<string, RoomConfig> = {};
   @property() public initialRoom = "";
-  @property() public controlMode: "mpc" | "bangbang" = "bangbang";
+  @property() public controlMode: "mpc" | "bangbang" = "mpc";
 
   @state() private _selectedRoom = "";
   @state() private _rangeStart: number = new Date(new Date().setHours(0, 0, 0, 0)).getTime();

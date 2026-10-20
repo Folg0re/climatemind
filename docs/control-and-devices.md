@@ -9,6 +9,15 @@ In `Settings -> Control -> Priority`, the slider balances comfort against runtim
 - Toward `Comfort`: ClimateMind reacts earlier and works harder to stay close to the target temperature.
 - Toward `Efficiency`: ClimateMind allows more drift around the target to reduce heating/cooling runtime.
 
+### Pre-heating
+
+When a schedule block raises the target (for example eco 17 °C until 06:00, then 21 °C), RoomMind works out from the learned room model how long the room needs to heat up and starts early enough for the room to be warm when the block begins. Rooms whose radiators need hours to recover from a night setback start correspondingly early.
+
+- At the default position and toward `Comfort`, pre-heating may start up to 12 hours ahead.
+- Below the default, the longest pre-heat lead shrinks with the slider; at full `Efficiency` RoomMind only heats shortly before the block, as before v1.7.9. The room then reaches the comfort temperature some time after the block has started, which uses a little less energy.
+- Underfloor heating uses its own pre-heating that accounts for the heat stored in the screed.
+- `Simple` control mode does not pre-heat.
+
 This setting does **not** change your schedule targets, overrides, comfort temperature, or eco temperature. It only changes how aggressively MPC tries to reach and hold those targets.
 
 ## Thermostat vs Climate Device
@@ -60,6 +69,21 @@ Best for:
 - space heaters
 - pellet stoves
 - devices with their own thermostat logic that should stay in control internally
+
+#### Setpoint offset
+
+Some devices measure the room differently than your room sensor, for example an AC mounted near the floor that cools its own sensor. With `Direct` and an external room sensor you can set a `Setpoint offset` (-5 to +5 °C, step 0.5, default 0). It is added to the room target before the target is sent to the device, for heating and cooling alike.
+
+- Device reads **colder** than the room: use a **negative** value.
+- Device reads **warmer** than the room: use a **positive** value.
+
+Example: the room target is 24°C. While cooling, the device thinks the room is 2° colder than it is and switches off too early. Set the offset to `-2`: the device receives 22°C and keeps running until the room is really at 24°C.
+
+The offset is applied before the device limits (`min_temp`/`max_temp`) and the step rounding, and it is kept for the `Setback` idle action. It has no effect in `Proportional` mode. The field is only offered in rooms with an external room sensor, because Managed rooms have no reference to correct against; an old value stays ignored there. On Fahrenheit systems the field is shown in °F.
+
+#### Upper device limit
+
+In `Proportional` mode the boosted heating setpoint stays one step (`target_temp_step`, 0.5 °C if the device reports none) below the device's `max_temp`, and never below the room target. Some integrations reject exactly their own `max_temp`, which made the Dyson Heat/Cool purifier ignore the 37°C setpoint. The cooling floor (`min_temp`) is unchanged.
 
 ## Idle Behavior: Off, Fan Only, Setback
 

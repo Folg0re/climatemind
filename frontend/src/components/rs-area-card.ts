@@ -14,7 +14,7 @@ export class RsAreaCard extends LitElement {
   @property({ type: Number }) public climateEntityCount = 0;
   @property({ type: Number }) public tempSensorCount = 0;
   @property({ attribute: false }) public hass!: HomeAssistant;
-  @property({ type: String }) public controlMode: "mpc" | "bangbang" = "bangbang";
+  @property({ type: String }) public controlMode: "mpc" | "bangbang" = "mpc";
   @property({ type: Boolean }) public climateControlActive = true;
   @property({ type: Boolean }) public reordering = false;
   @property({ type: Boolean }) public canMoveUp = false;
@@ -466,7 +466,8 @@ export class RsAreaCard extends LitElement {
       return html`<div class="waiting">${localize("card.waiting", this.hass.language)}</div>`;
     }
 
-    const showMpcIcon = this.controlMode === "mpc";
+    // Managed rooms (no external sensor) never run MPC, so "learning" would stay forever.
+    const showMpcIcon = this.controlMode === "mpc" && !!this.config?.temperature_sensor;
 
     return html`
       <div class="temp-section">

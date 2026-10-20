@@ -18,6 +18,13 @@ export interface ScheduleEntry {
   entity_id: string;
 }
 
+export interface ScheduleTempWarning {
+  day: string;
+  from: string;
+  field: "temperature" | "heat_temperature" | "cool_temperature";
+  value: string;
+}
+
 export interface CoverScheduleEntry {
   entity_id: string;
   mode?: "force" | "gate";
@@ -56,6 +63,11 @@ export interface RoomLiveData {
   learning_paused_reason: "outdoor_unavailable" | null;
   compressor_protection_active: boolean;
   compressor_protection_reason: "min_off" | "min_run" | null;
+  coil_dry_active: boolean;
+  coil_dry_phase: "drain" | "blow" | null;
+  coil_dry_until: number | null;
+  coil_dry_entities: string[];
+  schedule_temp_warnings: ScheduleTempWarning[];
 }
 
 export type DeviceType = "trv" | "ac";
@@ -69,6 +81,11 @@ export interface DeviceConfig {
   idle_action?: "off" | "fan_only" | "setback" | "low"; // default "off"
   idle_fan_mode?: string; // default "low"
   setpoint_mode?: "proportional" | "direct"; // default "proportional"
+  setpoint_offset?: number; // °C added to the room target in direct mode, default 0
+  coil_dry?: "inherit" | "on" | "off"; // default "inherit"
+  coil_dry_minutes?: number; // 0 = inherit global
+  coil_dry_mode?: "" | "fan_only" | "dry"; // "" = inherit global
+  coil_dry_fan_mode?: string; // "" = inherit global, "__keep__" = keep current
 }
 
 export type ConflictResolution =
@@ -161,6 +178,12 @@ export interface GlobalSettings {
   schedule_off_action?: "eco" | "off";
   valve_protection_enabled?: boolean;
   valve_protection_interval_days?: number;
+  coil_dry_enabled?: boolean;
+  coil_dry_minutes?: number;
+  coil_dry_mode?: "fan_only" | "dry";
+  coil_dry_fan_mode?: string;
+  coil_dry_min_cooling_minutes?: number;
+  coil_dry_drain_minutes?: number;
   mold_detection_enabled?: boolean;
   mold_humidity_threshold?: number;
   mold_sustained_minutes?: number;
@@ -255,6 +278,7 @@ export interface AnalyticsData {
       Q_cool: number;
       Q_solar: number;
       Q_occupancy: number;
+      Q_fast?: number;
     };
     n_samples: number;
     n_observations: number;
@@ -266,6 +290,8 @@ export interface AnalyticsData {
     prediction_std_idle: number;
     prediction_std_heating: number;
     has_occupancy_sensors: boolean;
+    solar_gain_now?: number;
+    solar_gain_today_max?: number;
   };
 }
 

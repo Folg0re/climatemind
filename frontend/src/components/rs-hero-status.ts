@@ -358,6 +358,12 @@ export class RsHeroStatus extends LitElement {
     return null;
   }
 
+  /** Whole minutes left, floored at 1 so the badge never reads "0 min". */
+  private _coilDryMinutesLeft(until: number | null): number {
+    if (until == null) return 1;
+    return Math.max(1, Math.ceil((until * 1000 - Date.now()) / 60000));
+  }
+
   private _renderTargetSection(live: NonNullable<RoomConfig["live"]>) {
     const targetTemp = live.target_temp;
     const l = this.hass?.language ?? "en";

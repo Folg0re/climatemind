@@ -550,8 +550,12 @@ def test_predict_idle_drift_uses_fallback_outdoor_temp():
 # ---------------------------------------------------------------------------
 
 
-def test_safety_guard_allows_heating_when_prediction_dips(monkeypatch):
-    """Safety guard allows HEATING when idle-drift predicts temp below target."""
+def test_safety_guard_no_drift_preheat_for_fast_systems(monkeypatch):
+    """A fast system at target does not start on a predicted dip; it heats once the dip happens.
+
+    The 1-node model of an AC room learns the air node relaxing into the walls as a
+    steep loss, so the drift bypass restarted the AC right after every stop.
+    """
     hass = build_hass()
     room = make_room()
     mgr = RoomModelManager()
@@ -574,12 +578,36 @@ def test_safety_guard_allows_heating_when_prediction_dips(monkeypatch):
         lambda *a, **kw: fake_plan,
     )
 
-    # current_temp=21.0 >= target=21.0 → guard entry triggers
-    # With outdoor=5, 30-min idle prediction from 21°C dips well below 21 - 0.2
-    # → guard should allow heating
+    # 30-min idle prediction from 21 °C dips below 20.8, but the system is fast
+    assert ctrl._predict_idle_drift(21.0, 30.0) < 20.8
     mode, pf = ctrl._evaluate_mpc(21.0, TargetTemps(heat=21.0, cool=25.0))
-    assert mode == MODE_HEATING
-    assert pf > 0.0
+    assert (mode, pf) == (MODE_IDLE, 0.0)
+
+
+def test_safety_guard_fast_system_keeps_heating_within_min_run(monkeypatch):
+    """Past the target a fast system continues only for its min run."""
+    hass = build_hass()
+    mgr = RoomModelManager()
+    ctrl = MPCController(
+        hass,
+        make_room(),
+        model_manager=mgr,
+        outdoor_temp=5.0,
+        settings={},
+        has_external_sensor=True,
+        previous_mode=MODE_HEATING,
+        mode_on_since=time.time() - 60,
+    )
+    fake_plan = MPCPlan(actions=[MODE_HEATING] * 24, temperatures=[21.3] * 25, power_fractions=[1.0] * 24)
+    monkeypatch.setattr(
+        "custom_components.climatemind.control.mpc_controller.MPCOptimizer.optimize",
+        lambda *a, **kw: fake_plan,
+    )
+
+    assert ctrl._evaluate_mpc(21.3, TargetTemps(heat=21.0, cool=25.0)) == (MODE_HEATING, 1.0)
+
+    ctrl.previous_mode = MODE_IDLE
+    assert ctrl._evaluate_mpc(21.3, TargetTemps(heat=21.0, cool=25.0)) == (MODE_IDLE, 0.0)
 
 
 def test_safety_guard_suppresses_when_prediction_stays_warm(monkeypatch):
@@ -637,6 +665,7 @@ def test_safety_guard_adaptive_horizon_underfloor(monkeypatch):
         actions=[MODE_HEATING] * 24,
         temperatures=[21.0] * 25,
         power_fractions=[0.8] * 24,
+        lookahead_blocks=24,  # what the optimizer reports for UFH
     )
     monkeypatch.setattr(
         "custom_components.climatemind.control.mpc_controller.MPCOptimizer.optimize",
@@ -649,8 +678,8 @@ def test_safety_guard_adaptive_horizon_underfloor(monkeypatch):
     assert mode == MODE_HEATING
 
 
-def test_safety_guard_allows_cooling_when_prediction_rises(monkeypatch):
-    """Safety guard allows COOLING when idle-drift predicts temp above target."""
+def test_safety_guard_no_drift_precool_for_fast_systems(monkeypatch):
+    """An AC at its cool target does not start on a predicted rise; it cools once the rise happens."""
     hass = build_hass()
     room = make_room(acs=["climate.ac1"], thermostats=[], climate_mode="cool_only")
     mgr = RoomModelManager()
@@ -674,11 +703,10 @@ def test_safety_guard_allows_cooling_when_prediction_rises(monkeypatch):
         lambda *a, **kw: fake_plan,
     )
 
-    # current_temp=24 <= cool_target=24 → guard entry triggers
-    # With outdoor=35 and solar=0.5, prediction rises above 24 + 0.2 → allow cooling
+    # With outdoor=35 and solar=0.5 the prediction rises above 24 + 0.2, but an AC is fast
+    assert ctrl._predict_idle_drift(24.0, 30.0) > 24.2
     mode, pf = ctrl._evaluate_mpc(24.0, TargetTemps(heat=21.0, cool=24.0))
-    assert mode == MODE_COOLING
-    assert pf > 0.0
+    assert (mode, pf) == (MODE_IDLE, 0.0)
 
 
 def test_safety_guard_suppresses_cooling_when_prediction_stays_cool(monkeypatch):
@@ -759,6 +787,8 @@ def test_hard_ceiling_does_not_fire_below_threshold(monkeypatch):
         outdoor_temp=5.0,
         settings={},
         has_external_sensor=True,
+        previous_mode=MODE_HEATING,
+        mode_on_since=time.time() - 60,  # within min-run
     )
     fake_plan = MPCPlan(
         actions=[MODE_HEATING] * 24,
@@ -769,7 +799,7 @@ def test_hard_ceiling_does_not_fire_below_threshold(monkeypatch):
         "custom_components.climatemind.control.mpc_controller.MPCOptimizer.optimize",
         lambda *a, **kw: fake_plan,
     )
-    # 21.5°C >= 21°C → model-based guard entry, outdoor=5 → prediction dips → allow
+    # 21.5°C >= 21°C → model-based guard entry, min-run keeps heating; ceiling (22) not reached
     mode, pf = ctrl._evaluate_mpc(21.5, TargetTemps(heat=21.0, cool=25.0))
     assert mode == MODE_HEATING
     assert pf > 0.0
@@ -989,3 +1019,130 @@ def test_mpc_guard_horizon_extended_for_ufh(monkeypatch):
     )
     mode, _ = ctrl._evaluate_mpc(21.0, TargetTemps(heat=21.0, cool=25.0))
     assert mode == MODE_HEATING, "Extended guard horizon for UFH should allow heating at mild outdoor=19°C"
+
+
+# ---------------------------------------------------------------------------
+# Occupancy is kept out of the shading peak (#418)
+# ---------------------------------------------------------------------------
+
+
+def _occupancy_controller(q_occupancy: float) -> MPCController:
+    """Controller whose model has a strong occupancy gain and a slow room."""
+    mgr = RoomModelManager()
+    mgr.get_model = MagicMock(return_value=RCModel(C=1.0, U=0.25, Q_heat=1.0, Q_cool=1.0, Q_occupancy=1.46))
+    return MPCController(
+        build_hass(),
+        make_room(),
+        model_manager=mgr,
+        outdoor_temp=24.0,
+        settings={},
+        has_external_sensor=True,
+        q_occupancy=q_occupancy,
+    )
+
+
+def test_simulate_plan_reproduces_the_plan_it_replays():
+    """Replaying a plan with its own inputs must return the plan's trajectory."""
+    from custom_components.climatemind.control.mpc_optimizer import MPCOptimizer
+
+    model = RCModel(C=1.0, U=0.25, Q_heat=1.0, Q_cool=1.0, Q_occupancy=1.46)
+    optimizer = MPCOptimizer(model=model, can_heat=True, can_cool=True)
+    outdoor = [24.0] * 24
+    solar = [0.2] * 24
+    residual = [0.3] * 24
+    occupancy = [1.0] * 24
+    plan = optimizer.optimize(
+        T_room=22.0,
+        T_outdoor_series=outdoor,
+        heat_target_series=[21.0] * 24,
+        cool_target_series=[24.0] * 24,
+        dt_minutes=5,
+        solar_series=solar,
+        residual_series=residual,
+        occupancy_series=occupancy,
+    )
+
+    replayed = optimizer.simulate_plan(
+        plan,
+        22.0,
+        outdoor,
+        5,
+        solar_series=solar,
+        residual_series=residual,
+        occupancy_series=occupancy,
+    )
+    assert replayed == plan.temperatures
+
+
+def test_predicted_peak_excludes_occupancy_heat():
+    """The shading peak must not carry body heat, the control plan still does."""
+    ctrl = _occupancy_controller(1.0)
+    ctrl._evaluate_mpc(22.0, TargetTemps(heat=21.0, cool=24.0))
+
+    assert ctrl.last_plan is not None
+    plan_peak = max(ctrl.last_plan.temperatures[1:])
+    assert ctrl.predicted_peak_temp is not None
+    assert ctrl.predicted_peak_temp < plan_peak - 1.0
+
+
+def test_control_plan_still_sees_occupancy():
+    """Removing occupancy from the peak must not change the control decision."""
+    occupied = _occupancy_controller(1.0)
+    empty = _occupancy_controller(0.0)
+    occupied._evaluate_mpc(22.0, TargetTemps(heat=21.0, cool=24.0))
+    empty._evaluate_mpc(22.0, TargetTemps(heat=21.0, cool=24.0))
+
+    assert occupied.last_plan is not None and empty.last_plan is not None
+    # The optimizer's own trajectory diverges because it still gets the gain.
+    assert max(occupied.last_plan.temperatures[1:]) > max(empty.last_plan.temperatures[1:])
+
+
+def test_predicted_peak_matches_empty_room_peak():
+    """An occupied and an empty room must offer the cover logic the same peak."""
+    occupied = _occupancy_controller(1.0)
+    empty = _occupancy_controller(0.0)
+    occupied._evaluate_mpc(22.0, TargetTemps(heat=21.0, cool=24.0))
+    empty._evaluate_mpc(22.0, TargetTemps(heat=21.0, cool=24.0))
+
+    assert occupied.predicted_peak_temp == pytest.approx(empty.predicted_peak_temp, abs=0.05)
+
+
+def test_unoccupied_room_uses_the_plan_trajectory_directly():
+    """Without occupancy there is nothing to subtract, so no replay happens."""
+    ctrl = _occupancy_controller(0.0)
+    ctrl._evaluate_mpc(22.0, TargetTemps(heat=21.0, cool=24.0))
+
+    assert ctrl._peak_temps_unoccupied is None
+    assert ctrl.last_plan is not None
+    assert ctrl.predicted_peak_temp == max(ctrl.last_plan.temperatures[1:])
+
+
+def test_simulate_plan_replays_directed_actions():
+    """Heating and cooling blocks must replay with their power, not as idle."""
+    from custom_components.climatemind.control.mpc_optimizer import MPCOptimizer
+
+    model = RCModel(C=1.0, U=0.25, Q_heat=1.0, Q_cool=2.0, Q_occupancy=1.0)
+    optimizer = MPCOptimizer(model=model, can_heat=False, can_cool=True)
+    plan = MPCPlan(
+        actions=[MODE_COOLING] * 4,
+        temperatures=[28.0] * 5,
+        power_fractions=[1.0] * 4,
+    )
+    replayed = optimizer.simulate_plan(plan, 28.0, [30.0] * 4, 5)
+
+    assert replayed[0] == 28.0
+    assert replayed[-1] < 28.0  # cooling actually removed heat
+
+    heat_plan = MPCPlan(
+        actions=[MODE_HEATING] * 4,
+        temperatures=[18.0] * 5,
+        power_fractions=[1.0] * 4,
+    )
+    idle_plan = MPCPlan(
+        actions=[MODE_IDLE] * 4,
+        temperatures=[18.0] * 5,
+        power_fractions=[0.0] * 4,
+    )
+    heated = optimizer.simulate_plan(heat_plan, 18.0, [10.0] * 4, 5)
+    idled = optimizer.simulate_plan(idle_plan, 18.0, [10.0] * 4, 5)
+    assert heated[-1] > idled[-1]

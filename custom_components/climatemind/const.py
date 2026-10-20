@@ -23,11 +23,20 @@ OVERRIDE_BOOST = "boost"
 OVERRIDE_ECO = "eco"
 OVERRIDE_CUSTOM = "custom"
 OVERRIDE_TYPES = [OVERRIDE_BOOST, OVERRIDE_ECO, OVERRIDE_CUSTOM]
+# Grace period after the override entity is switched on before the seeded
+# override is evaluated; the caller's real targets normally arrive within it (#447).
+OVERRIDE_TURN_ON_REFRESH_DELAY_S = 3.0
 
 # Room modes
 MODE_IDLE = "idle"
 MODE_HEATING = "heating"
 MODE_COOLING = "cooling"
+
+# Global control strategy (settings["control_mode"]). Missing value = MPC, which
+# is what every install ran before the setting was read by the controller.
+CONTROL_MODE_MPC = "mpc"
+CONTROL_MODE_BANGBANG = "bangbang"
+DEFAULT_CONTROL_MODE = CONTROL_MODE_MPC
 
 # Schedule states
 SCHEDULE_STATE_ON = "on"
@@ -63,6 +72,13 @@ class TargetTemps(NamedTuple):
     cool: float | None = None  # None = don't cool / force off
 
 
+# Plausibility bounds for resolved room target temperatures (°C).
+# Schedule blocks are free-form YAML, so a typo (110 instead of 11) would
+# otherwise be heated against for hours (#395). Same range as the override
+# climate entity in climate.py, which imports these.
+MIN_TARGET_TEMP = 5.0
+MAX_TARGET_TEMP = 35.0
+
 # Smart control defaults
 BANGBANG_HEAT_HYSTERESIS = 0.2  # °C below target → start heating (bang-bang fallback)
 BANGBANG_COOL_HYSTERESIS = 0.2  # °C above target → start cooling (bang-bang fallback)
@@ -78,6 +94,12 @@ AC_BOOST_DELTA_MIN = 3.0  # Tightest AC setpoint cap (°C above/below target) at
 AC_BOOST_DELTA_MAX = 50.0  # Comfort-end AC cap (°C); finite value above any real device range so the cap never binds (inf would break the linear slider interpolation)
 PROPORTIONAL_DEADBAND_C = 0.5  # Minimum proportional setpoint change (°C) to resend, in the gentle regime
 PROPORTIONAL_DEADBAND_NEAR_TARGET_C = 0.2  # Finer proportional deadband (°C) within 1°C of target
+PROPORTIONAL_SETPOINT_DWELL_SECONDS = 300  # Minimum time a proportional setpoint stays on the device before a recomputed one replaces it (one MPC block, #317)
+BOOST_CAP_FALLBACK_STEP = 0.5  # Distance kept below a device's max_temp for proportional heating setpoints when it reports no target_temp_step (#396)
+# Comfort-weighted cost (°C² equivalent) of starting a run, for slow heating systems (UFH) only.
+# Fast systems get a start hysteresis in the controller; UFH keeps the optimizer's decisions
+# and toggled heat/idle every 30 s cycle at the target without it (#429).
+SLOW_SYSTEM_START_PENALTY = 1.0
 
 # Update interval in seconds
 UPDATE_INTERVAL = 30
@@ -141,6 +163,12 @@ HEATING_SYSTEM_PROFILES: dict[str, dict[str, float]] = {
 }
 RESIDUAL_HEAT_CUTOFF = 0.02  # below this q_residual is treated as zero
 
+# AC rebound: while an AC cools, the air drops below the building mass; after it
+# stops the air relaxes back within minutes. Charge relaxes towards the cooling
+# power fraction while cooling and decays with this time constant otherwise.
+AC_REBOUND_TAU_MINUTES = 10.0
+AC_REBOUND_CUTOFF = 0.01  # below this the rebound charge is treated as zero
+
 # Blind/cover control
 COVER_SOLAR_MIN: float = 0.15
 COVER_HYSTERESIS: float = 1.0
@@ -152,12 +180,19 @@ COVER_USER_OVERRIDE_MINUTES: int = 60
 COVER_TRANSITION_SETTLE_S: int = 90  # seconds after commanding before override detection activates
 COVER_DEFAULT_BETA_S: float = 3.0  # °C/h per unit q_solar (default for rooms without learned data)
 COVER_LINEAR_LOOKAHEAD_H: float = 1.0  # linear fallback: 1h (no heat-loss correction → keep short)
+COVER_COOLING_LOOKAHEAD_H: float = 3.0  # rooms that cool: solar input the learned model counts (unit removes it all)
+COVER_COOLING_LINEAR_H: float = 2.0  # same with the default gain (~2x a learned one) while the model is not confident
+COVER_DIRECT_SUN_ANGLE_DEG: float = 60.0  # sun within this angle of the facade normal counts fully
 COVER_PREDICTION_DT_MINUTES: float = 5.0  # time step for RC trajectory simulation
 COVER_MAX_PREDICTION_STD: float = 0.5  # max idle+solar prediction_std to activate RC tier
 COVER_CONFIDENCE_REFERENCE_SOLAR: float = 0.5  # reference q_solar for confidence check
 COVER_MIN_IDLE_FOR_LEARNED: int = 30  # Min idle observations before trusting EKF's beta_s
 COVER_POS_DEADBAND: int = 20  # min position change (%) to trigger motor movement
+COVER_REOPEN_STEP: int = 40  # min partial reopening (%) within a shading episode
+COVER_REOPEN_HOLD_SECONDS: int = 3600  # min time since the last move before a partial reopening
 COVER_DAILY_LOOKAHEAD_H: float = 8.0  # hours ahead to search for daily solar peak (Tier 2)
+COVER_SMOOTHING_MINUTES: float = 30.0  # EMA time constant for room temp and shading excess (AC cycles)
+COVER_SMOOTHING_RISE_MINUTES: float = 10.0  # faster EMA while the shading excess climbs
 
 # Heat source orchestration — smart routing for rooms with multiple heating device types
 DEFAULT_HEAT_SOURCE_PRIMARY_DELTA = 1.5  # °C gap to engage primary (boiler/radiator)
@@ -170,6 +205,19 @@ HEAT_SOURCE_SECONDARY_POWER_SCALE = 0.7  # throttle secondary when both active (
 # Compressor group defaults
 DEFAULT_COMPRESSOR_MIN_RUN_MINUTES = 15
 DEFAULT_COMPRESSOR_MIN_OFF_MINUTES = 5
+# Devices without usable state (IR blasters) get an unchanged command once more after this long.
+# Long enough that it is not audible as a beep pattern (#416), short enough to heal a lost frame,
+# a change on the remote or a restarted device within one comfortable stretch.
+COMMAND_CACHE_REASSERT_SECONDS = 1800
+# A resolved target that moved by more than this since the last active command is a deliberate change (°C)
+COMPRESSOR_HOLD_RETARGET_TOLERANCE = 0.05
+# Compressor hold: a heating unit keeps its boost until the room is this far above the heating target
+# (and at least at the cooling target), the cooling side mirrored. With single-point targets (heat == cool)
+# the margin keeps "target reached" from ending the hold; 0.5 K is a typical sensor/setpoint resolution.
+HOLD_OVERSHOOT_MARGIN = 0.5
+COMPRESSOR_STATE_SETTLE_SECONDS = (
+    120  # An "off" reading this soon after our own start is state lag, not a manual switch-off
+)
 
 # Compressor group master device — conflict resolution strategies
 CONFLICT_RESOLUTION_HEATING_PRIORITY = "heating_priority"

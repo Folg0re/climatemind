@@ -13,10 +13,15 @@ if TYPE_CHECKING:
 from homeassistant.util import dt as dt_util
 
 from ..const import (
+    CLIMATE_MODE_COOL_ONLY,
+    CLIMATE_MODE_HEAT_ONLY,
     DEFAULT_COMFORT_COOL,
     DEFAULT_COMFORT_HEAT,
     DEFAULT_ECO_COOL,
     DEFAULT_ECO_HEAT,
+    MAX_TARGET_TEMP,
+    MIN_TARGET_TEMP,
+    OVERRIDE_ECO,
     TargetTemps,
 )
 
@@ -41,6 +46,118 @@ def find_active_block(schedule_blocks: dict, ts: float) -> dict[str, Any] | None
         if from_time <= current_time < to_time:
             return dict(block.get("data", {}))
     return None
+
+
+def sanitize_block_temp(
+    raw: Any,
+    converter: Callable[[float], float] | None = None,
+) -> float | None:
+    """Convert a schedule block temperature to °C, or None if unusable.
+
+    Schedule blocks are free-form YAML, so a typo (110 instead of 11) reaches us
+    unchecked and would be heated against for hours (#395). Values outside
+    ``MIN_TARGET_TEMP``..``MAX_TARGET_TEMP`` are rejected so the caller can fall
+    back to comfort/eco.
+
+    The range check runs *after* ``converter``, so the bounds always apply to
+    Celsius regardless of the HA display unit (on a °F system the accepted
+    window is 41–95 °F).
+    """
+    try:
+        val = float(raw)
+    except (ValueError, TypeError):
+        return None
+    if converter is not None:
+        val = converter(val)
+    # Negated comparison also rejects NaN, which would pass `MIN <= v <= MAX`.
+    if not MIN_TARGET_TEMP <= val <= MAX_TARGET_TEMP:
+        return None
+    return val
+
+
+# Weekday order used when reporting rejected blocks, so the panel lists them
+# in calendar order rather than dict insertion order.
+_WEEKDAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+
+# Block data keys that carry a target temperature.
+_BLOCK_TEMP_FIELDS = ("temperature", "heat_temperature", "cool_temperature")
+
+
+def find_rejected_block_temps(
+    schedule_blocks: dict | None,
+    converter: Callable[[float], float] | None = None,
+) -> list[dict[str, Any]]:
+    """Scan *every* block of a schedule for temperatures the resolver would drop.
+
+    ``sanitize_block_temp`` only sees the block that is running right now, so a
+    typo in a block scheduled for 03:00 stays invisible until it fires (#395).
+    This walks the whole week so the panel can surface it at any time of day.
+
+    Returns one entry per rejected value, each with ``day``, ``from``, ``field``
+    and the offending ``value`` as a string (it may not be numeric at all).
+    Only values that are present but unusable are reported — an absent field is
+    not a problem, it simply falls back to comfort.
+    """
+    if not schedule_blocks:
+        return []
+
+    rejected: list[dict[str, Any]] = []
+    for day in _WEEKDAYS:
+        for block in schedule_blocks.get(day, []) or []:
+            data = block.get("data") or {}
+            for field in _BLOCK_TEMP_FIELDS:
+                raw = data.get(field)
+                if raw is None or sanitize_block_temp(raw, converter) is not None:
+                    continue
+                rejected.append(
+                    {
+                        "day": day,
+                        "from": str(block.get("from", "")),
+                        "field": field,
+                        "value": str(raw),
+                    }
+                )
+    return rejected
+
+
+def override_preset_band(room: dict, override_type: str) -> tuple[float, float]:
+    """Return the (heat, cool) band a boost/eco override stands for.
+
+    Both presets are bands in auto rooms, never a single point: collapsing eco
+    to ``eco_heat`` on both sides makes an AC cool toward the heating target (#284).
+    """
+    if override_type == OVERRIDE_ECO:
+        return (
+            room.get("eco_heat", room.get("eco_temp", DEFAULT_ECO_HEAT)),
+            room.get("eco_cool", DEFAULT_ECO_COOL),
+        )
+    return (
+        room.get("comfort_heat", room.get("comfort_temp", DEFAULT_COMFORT_HEAT)),
+        room.get("comfort_cool", DEFAULT_COMFORT_COOL),
+    )
+
+
+def mask_override_band(heat: float | None, cool: float | None, climate_mode: str) -> tuple[float | None, float | None]:
+    """Drop the side a heat_only/cool_only room cannot act on."""
+    if climate_mode == CLIMATE_MODE_HEAT_ONLY:
+        return heat, None
+    if climate_mode == CLIMATE_MODE_COOL_ONLY:
+        return None, cool
+    return heat, cool
+
+
+def cap_cool_only_heat(heat: float | None, cool: float | None, climate_mode: str) -> tuple[float | None, float | None]:
+    """Keep the unused heat side of a cool_only room from rising above the cool target.
+
+    A cool_only room configured with the legacy ``comfort_temp`` (API, old configs)
+    carried that value on the heat side next to the default ``comfort_cool``, e.g.
+    heat 24.5 / cool 24.0. The optimizer lifts the cool target to the heat side and
+    the cover target takes the higher one, while guard, hysteresis and the panel use
+    the cool target. The cool target is what the panel shows for cool_only rooms.
+    """
+    if climate_mode == CLIMATE_MODE_COOL_ONLY and heat is not None and cool is not None and heat > cool:
+        return cool, cool
+    return heat, cool
 
 
 def resolve_target_at_time(
@@ -79,11 +196,9 @@ def resolve_target_at_time(
     if data is not None:
         block_temp = data.get("temperature")
         if block_temp is not None:
-            try:
-                val = float(block_temp)
-                return block_temp_converter(val) if block_temp_converter else val
-            except (ValueError, TypeError):
-                pass
+            val = sanitize_block_temp(block_temp, block_temp_converter)
+            if val is not None:
+                return val
         return comfort_temp
     # Not in any block → eco or off
     if schedule_off_action == "off":
@@ -137,26 +252,20 @@ def resolve_targets_at_time(
             h = comfort_heat
             c = comfort_cool
             if heat_temp_raw is not None:
-                try:
-                    val = float(heat_temp_raw)
-                    h = block_temp_converter(val) if block_temp_converter else val
-                except (ValueError, TypeError):
-                    pass
+                val = sanitize_block_temp(heat_temp_raw, block_temp_converter)
+                if val is not None:
+                    h = val
             if cool_temp_raw is not None:
-                try:
-                    val = float(cool_temp_raw)
-                    c = block_temp_converter(val) if block_temp_converter else val
-                except (ValueError, TypeError):
-                    pass
+                val = sanitize_block_temp(cool_temp_raw, block_temp_converter)
+                if val is not None:
+                    c = val
             return TargetTemps(heat=h, cool=c)
         block_temp = data.get("temperature")
         if block_temp is not None:
-            try:
-                val = float(block_temp)
-                t = block_temp_converter(val) if block_temp_converter else val
-                return TargetTemps(heat=t, cool=t)
-            except (ValueError, TypeError):
-                pass
+            # Distinct name from the vacation branch's `t`, which is a plain float.
+            single = sanitize_block_temp(block_temp, block_temp_converter)
+            if single is not None:
+                return TargetTemps(heat=single, cool=single)
         return TargetTemps(heat=comfort_heat, cool=comfort_cool)
     # Not in any block → eco or off
     if schedule_off_action == "off":
@@ -299,6 +408,7 @@ def make_target_resolver(
     presence_away_action = settings.get("presence_away_action", "eco")
     schedule_off_action = settings.get("schedule_off_action", "eco")
     presence_clears_override = bool(settings.get("presence_clears_override", False))
+    climate_mode = room.get("climate_mode", "auto")
 
     converter: Callable[[float], float] | None = None
     if hass is not None:
@@ -329,8 +439,11 @@ def make_target_resolver(
         if targets.heat is None and targets.cool is None:
             return targets
         return TargetTemps(
-            heat=targets.heat + mold_prevention_delta if targets.heat is not None else None,
-            cool=targets.cool if targets.cool is not None else None,
+            *cap_cool_only_heat(
+                targets.heat + mold_prevention_delta if targets.heat is not None else None,
+                targets.cool,
+                climate_mode,
+            )
         )
 
     return resolver

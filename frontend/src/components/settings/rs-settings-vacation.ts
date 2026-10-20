@@ -1,7 +1,7 @@
 /**
  * rs-settings-vacation – Vacation mode settings.
  */
-import { html, nothing } from "lit";
+import { css, html, nothing } from "lit";
 import { RsSettingsBase } from "./rs-settings-base";
 import { customElement, property } from "lit/decorators.js";
 import type { HomeAssistant } from "../../types";
@@ -69,7 +69,15 @@ export class RsSettingsVacation extends RsSettingsBase {
     `;
   }
 
-  static styles = [RsSettingsBase.settingsBaseStyles];
+  static styles = [
+    RsSettingsBase.settingsBaseStyles,
+    css`
+      .field-label {
+        color: var(--secondary-text-color);
+        font-size: 12px;
+      }
+    `,
+  ];
 }
 
 declare global {
