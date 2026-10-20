@@ -368,6 +368,8 @@ export class RsAreaCard extends LitElement {
   ];
 
   render() {
+    if (!this.area) return nothing;
+
     const hasClimateDevices = this.climateEntityCount > 0;
     const hasClimateSelected =
       (this.config?.devices?.length ?? 0) > 0 ||

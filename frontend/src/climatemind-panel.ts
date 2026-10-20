@@ -685,7 +685,9 @@ export class ClimateMindPanel extends LitElement {
   private _computeAreaInfos(): AreaInfo[] {
     if (!this.hass?.areas) return [];
 
-    const areas = Object.values(this.hass.areas);
+    const areas = Object.entries(this.hass.areas).flatMap(([areaId, area]) =>
+      area && typeof area.name === "string" ? [{ ...area, area_id: areaId }] : [],
+    );
 
     const infos: AreaInfo[] = areas.map((area) => {
       const areaEntities = getEntitiesForArea(
