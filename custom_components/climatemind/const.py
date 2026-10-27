@@ -7,7 +7,7 @@ from homeassistant.const import Platform
 from homeassistant.core import Context
 
 DOMAIN = "climatemind"
-VERSION = "0.5.0"
+VERSION = "0.8.0"
 
 # Platforms
 PLATFORMS = [Platform.SENSOR, Platform.SWITCH, Platform.BINARY_SENSOR, Platform.CLIMATE]
@@ -54,15 +54,12 @@ DEFAULT_ECO_COOL = 27.0
 
 # Context identifier for ClimateMind-initiated service calls.
 # Automations can check: trigger.context.parent_id == "climatemind"
-ROOMMIND_CONTEXT_ID = "climatemind"
+CLIMATEMIND_CONTEXT_ID = "climatemind"
 
 
 def make_climatemind_context() -> Context:
     """Create a HA Context tagged as originating from ClimateMind."""
-    return Context(parent_id=ROOMMIND_CONTEXT_ID)
-
-
-make_roommind_context = make_climatemind_context
+    return Context(parent_id=CLIMATEMIND_CONTEXT_ID)
 
 
 class TargetTemps(NamedTuple):
@@ -96,6 +93,18 @@ PROPORTIONAL_DEADBAND_C = 0.5  # Minimum proportional setpoint change (°C) to r
 PROPORTIONAL_DEADBAND_NEAR_TARGET_C = 0.2  # Finer proportional deadband (°C) within 1°C of target
 PROPORTIONAL_SETPOINT_DWELL_SECONDS = 300  # Minimum time a proportional setpoint stays on the device before a recomputed one replaces it (one MPC block, #317)
 BOOST_CAP_FALLBACK_STEP = 0.5  # Distance kept below a device's max_temp for proportional heating setpoints when it reports no target_temp_step (#396)
+# Direct valve control (#413): TRVs whose valve opening ClimateMind sets through number entities
+VALVE_DWELL_SECONDS = 600  # Minimum time a valve position stays before a small correction moves the motor again
+VALVE_DEADBAND_PCT = 5  # Smaller position changes are not sent
+VALVE_OVERSHOOT_STOP_K = 0.5  # A modulating valve closes this far above the target whatever the model says
+VALVE_PROPORTIONAL_BAND_K = 1.0  # A modulating valve opens 100 % further per this many K below the target
+# AC sensor offset (device reading - room sensor while the compressor runs), see HeadOffsetTracker
+HEAD_OFFSET_SETTLE_S = 240  # Running time before readings count: the offset builds up with the airflow after a start
+HEAD_OFFSET_ALPHA = 0.05  # EMA weight per reading (one per 30 s cycle: ~10 min of running to follow a change)
+HEAD_OFFSET_MIN_SAMPLES = 10  # Readings before the offset is applied to setpoints
+HEAD_OFFSET_MAX_K = 4.0  # Larger differences are a misplaced or broken sensor, not a bias to correct
+HEAD_OFFSET_GRID_K = 0.5  # Applied offsets are multiples of this; below a quarter of a degree nothing changes
+HEAD_OFFSET_HYSTERESIS_K = 0.375  # The applied offset moves only once the learned one is this far from it
 # Comfort-weighted cost (°C² equivalent) of starting a run, for slow heating systems (UFH) only.
 # Fast systems get a start hysteresis in the controller; UFH keeps the optimizer's decisions
 # and toggled heat/idle every 30 s cycle at the target without it (#429).
@@ -119,7 +128,7 @@ EKF_UPDATE_MIN_DT = 3.0  # minutes — matches HISTORY_WRITE_CYCLES
 # Outdoor sensor watchdog: notify when no valid outdoor temperature for this
 # many coordinator cycles (60 × 30 s = 30 min).
 OUTDOOR_UNAVAILABLE_NOTIFY_CYCLES = 60
-OUTDOOR_UNAVAILABLE_NOTIFICATION_ID = "_outdoor_unavailable"
+OUTDOOR_UNAVAILABLE_NOTIFICATION_ID = "climatemind_outdoor_unavailable"
 
 # Prediction clamping: max °C change in one prediction step (prevents unrealistic jumps)
 MAX_PREDICTION_DELTA = 3.0
@@ -141,6 +150,7 @@ DEFAULT_MOLD_COOLDOWN_MINUTES = 60  # minutes between repeated notifications per
 MOLD_PREVENTION_DELTAS = {"light": 1.0, "medium": 2.0, "strong": 3.0}
 MOLD_HYSTERESIS = 5.0  # surface RH must drop this much below warning to clear
 MIN_MOLD_GROWTH_TEMP = 5.0  # °C — below this surface temp, mold risk negligible
+DEFAULT_MOLD_F_RSI = 0.80  # DIN 4108-2 temperature factor; realistic for standard existing buildings
 
 # Heating system profiles — residual heat modeling per system type
 # tau_minutes: exponential decay time constant of residual heat after heating stops

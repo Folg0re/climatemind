@@ -31,6 +31,9 @@ from .mpc_controller import (
     heat_start_hysteresis,
     is_mpc_enabled,
     is_slow_heat,
+    is_valve_modulating,
+    outdoor_gate_limits,
+    valve_demand,
 )
 from .mpc_optimizer import MPCOptimizer, preheat_max_blocks, slow_start_penalty
 from .residual_heat import (
@@ -45,7 +48,7 @@ from .thermal_model import RCModel, ThermalEKF
 
 def build_forecast_outdoor_series(
     forecast: list[dict] | None,
-    current_outdoor: float,
+    current_outdoor: float | None,
     n_blocks: int,
 ) -> list[float]:
     """Build outdoor temperature series for analytics prediction.
@@ -53,22 +56,26 @@ def build_forecast_outdoor_series(
     Block 0 uses ``current_outdoor`` (real-time sensor reading). Subsequent
     blocks expand each hourly forecast entry to ``60 // PLAN_DT_MINUTES`` blocks.
     Padded with the last forecast value when the horizon exceeds the forecast.
+    Without a reading (None) block 0 keeps the forecast and only gaps get the
+    placeholder, as in ``MPCController._build_outdoor_series``.
     """
-    if not forecast:
-        return [current_outdoor] * n_blocks
+    from .mpc_controller import DEFAULT_OUTDOOR_TEMP_FALLBACK, PLAN_DT_MINUTES
 
-    from .mpc_controller import PLAN_DT_MINUTES
+    fallback = current_outdoor if current_outdoor is not None else DEFAULT_OUTDOOR_TEMP_FALLBACK
+    if not forecast:
+        return [fallback] * n_blocks
 
     blocks_per_hour = 60 // PLAN_DT_MINUTES
 
     series: list[float] = []
     for f in forecast:
-        temp = f.get("temperature", current_outdoor)
+        temp = f.get("temperature", fallback)
         series.extend([temp] * blocks_per_hour)
         if len(series) >= n_blocks:
             break
 
-    series[0] = current_outdoor
+    if current_outdoor is not None:
+        series[0] = current_outdoor
 
     while len(series) < n_blocks:
         series.append(series[-1])
@@ -164,6 +171,7 @@ def simulate_prediction(
     mode_elapsed_minutes: float | None = None,
     q_rebound: float | None = None,
     run_system: str | None = None,
+    outdoor_known: bool = True,
 ) -> list[float]:
     """Simulate temperature prediction for the analytics chart.
 
@@ -196,6 +204,7 @@ def simulate_prediction(
             mode_elapsed_minutes=mode_elapsed_minutes,
             q_rebound=q_rebound,
             run_system=rules,
+            outdoor_known=outdoor_known,
         )
 
     return _simulate_bangbang(
@@ -303,6 +312,7 @@ def _simulate_mpc(
     mode_elapsed_minutes: float | None = None,
     q_rebound: float | None = None,
     run_system: str | None = None,
+    outdoor_known: bool = True,
 ) -> list[float]:
     """Rolling-horizon MPC simulation matching the real controller.
 
@@ -310,15 +320,22 @@ def _simulate_mpc(
     controller's own rules (``decide_mpc_action``: hard ceiling, guard, start
     hysteresis, min-run continuation at gentle power, drift pre-heat only for slow
     heat). ``previous_mode``/``mode_elapsed_minutes`` seed the run in progress, so a
-    room inside the hysteresis band keeps heating like the real one.
+    room inside the hysteresis band keeps heating like the real one. ``outdoor_known=False``
+    (no reading, no forecast): the series is the placeholder and gates nothing, as in the controller.
     """
-    ocm = settings.get("outdoor_cooling_min", DEFAULT_OUTDOOR_COOLING_MIN)
-    ohm = settings.get("outdoor_heating_max", DEFAULT_OUTDOOR_HEATING_MAX)
+    ocm, ohm = outdoor_gate_limits(
+        outdoor_known,
+        settings.get("outdoor_cooling_min", DEFAULT_OUTDOOR_COOLING_MIN),
+        settings.get("outdoor_heating_max", DEFAULT_OUTDOOR_HEATING_MAX),
+    )
     override_active = is_override_active(room_config)
     cw = settings.get("comfort_weight", 70)
     w_comfort = max(1.0, cw / 10.0)
     w_energy = max(1.0, (100 - cw) / 10.0)
     approach_rate = min(1.0, APPROACH_RATE_MIN + (1.0 - APPROACH_RATE_MIN) * cw / DEFAULT_COMFORT_WEIGHT)
+    valve_modulating = is_valve_modulating(
+        room_config.get("devices", []), acs_can_heat, bool(room_config.get("temperature_sensor"))
+    )
 
     rules = heating_system_type if run_system is None else run_system
     min_run = get_min_run_blocks(rules, PLAN_DT_MINUTES)
@@ -434,6 +451,11 @@ def _simulate_mpc(
                 idle_drift=partial(_idle_drift, model, T, T_out, qs, current_q_residual, q_occupancy, charge),
                 continuation_power=partial(
                     _continuation_power, optimizer, T, T_out, qs, current_q_residual, q_occupancy, charge
+                ),
+                valve_demand=(
+                    partial(valve_demand, model, T, T_out, q_solar=qs, q_occupancy=q_occupancy)
+                    if valve_modulating
+                    else None
                 ),
             )
         if action == MODE_HEATING:

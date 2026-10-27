@@ -58,10 +58,7 @@ def _is_entity_gone(hass: HomeAssistant, entity_id: str) -> bool:
     """
     if not hass.is_running:
         return False
-    try:
-        entry = er.async_get(hass).async_get(entity_id)
-    except Exception:  # noqa: BLE001
-        return False
+    entry = er.async_get(hass).async_get(entity_id)
     if entry is None:
         return True
     return entry.disabled_by is not None

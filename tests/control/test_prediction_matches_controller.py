@@ -2,7 +2,7 @@
 
 Before, ``_simulate_mpc`` had its own run rules (heat on until the target at full
 power, min run at full power, no start hysteresis, drift pre-heat for every
-system), so the prediction line showed runs RoomMind never makes. Both now share
+system), so the prediction line showed runs ClimateMind never makes. Both now share
 ``decide_mpc_action``; these tests drive the real controller in a closed loop and
 compare it with the prediction on identical inputs.
 """
@@ -39,6 +39,7 @@ def _closed_loop(
     previous_mode: str = MODE_IDLE,
     elapsed_minutes: float | None = None,
     ac_modes: list[str] | None = None,
+    outdoor_known: bool = True,
 ) -> list[float]:
     """Run the controller every 5 min like the coordinator does and return the temperatures."""
     clock = {"now": START}
@@ -67,7 +68,7 @@ def _closed_loop(
             hass,
             room,
             model_manager=manager,
-            outdoor_temp=outdoor,
+            outdoor_temp=outdoor if outdoor_known else None,
             settings={},
             previous_mode=prev,
             mode_on_since=on_since,
@@ -109,6 +110,7 @@ def _prediction(
     previous_mode: str = MODE_IDLE,
     elapsed_minutes: float | None = None,
     acs_can_heat: bool = False,
+    outdoor_known: bool = True,
 ) -> list[float]:
     # Long enough that the controller's horizon never runs past the forecast
     n = STEPS + 400
@@ -124,6 +126,7 @@ def _prediction(
         heating_system_type=heating_system_type,
         previous_mode=previous_mode,
         mode_elapsed_minutes=elapsed_minutes,
+        outdoor_known=outdoor_known,
     )[:STEPS]
 
 
@@ -131,6 +134,8 @@ TRV = RCModel(C=1.0, U=0.3, Q_heat=10.0, Q_cool=0.0)
 AC = RCModel(C=1.0, U=0.3, Q_heat=20.0, Q_cool=20.0)
 UFH = RCModel(C=1.0, U=0.2, Q_heat=6.0, Q_cool=0.0)
 SLOW_UFH = RCModel(C=1.0, U=0.02, Q_heat=2.0, Q_cool=0.0)
+# Tight room: the drift towards the 10 °C placeholder alone does not bring it to the target
+TIGHT_AC = RCModel(C=1.0, U=0.02, Q_heat=20.0, Q_cool=20.0)
 
 
 @pytest.mark.parametrize(
@@ -189,10 +194,30 @@ SLOW_UFH = RCModel(C=1.0, U=0.02, Q_heat=2.0, Q_cool=0.0)
             },
         ),
         (
+            # #464: without a reading or forecast the series is the 10 °C placeholder,
+            # which must not gate cooling in the prediction either
+            "ac cooling without an outdoor reading",
+            TIGHT_AC,
+            {"climate_mode": "cool_only", "thermostats": [], "acs": ["climate.ac"]},
+            {
+                "T0": 26.0,
+                "outdoor": mc.DEFAULT_OUTDOOR_TEMP_FALLBACK,
+                "outdoor_known": False,
+                "targets": TargetTemps(heat=None, cool=24.0),
+            },
+        ),
+        (
             "hard ceiling ends a run",
             TRV,
             {"climate_mode": "heat_only"},
             {"T0": 22.5, "previous_mode": MODE_HEATING, "elapsed_minutes": 1.0},
+        ),
+        ("valve below the hysteresis", TRV, {"climate_mode": "heat_only", "valve": True}, {"T0": 20.0}),
+        (
+            "valve holding at the target",
+            TRV,
+            {"climate_mode": "heat_only", "valve": True},
+            {"T0": 21.0, "outdoor": -5.0, "previous_mode": MODE_HEATING, "elapsed_minutes": 30.0},
         ),
     ],
 )
@@ -206,7 +231,13 @@ def test_prediction_follows_the_controller(monkeypatch, label, model, room, kwar
         "heating_system_type": room.get("heating_system_type", ""),
         **kwargs,
     }
+    room = dict(room)
+    valve = room.pop("valve", False)
     room_config = make_room(**room)
+    if valve:
+        for device in room_config["devices"]:
+            device["valve_opening_entity"] = "number.valve_opening_degree"
+            device["valve_closing_entity"] = "number.valve_closing_degree"
     has_ac = bool(room_config.get("acs"))
     real = _closed_loop(
         monkeypatch,
@@ -217,6 +248,8 @@ def test_prediction_follows_the_controller(monkeypatch, label, model, room, kwar
     )
     predicted = _prediction(model, room_config, acs_can_heat=has_ac or is_ac, **common)
     assert predicted == real, label
+    if not common.get("outdoor_known", True):
+        assert real[0] < common["T0"] - 0.5, "the controller must actually cool"
 
 
 def test_prediction_without_the_controller_rules_would_differ(monkeypatch):
@@ -230,3 +263,21 @@ def test_prediction_without_the_controller_rules_would_differ(monkeypatch):
     )
     bare = _prediction(TRV, room, T0=20.95, targets=TargetTemps(heat=21.0, cool=24.0), outdoor=5.0)
     assert bare != real
+
+
+def test_valve_room_holds_where_a_setpoint_room_switches():
+    """The valve rule changes the prediction: a steadier room around the target (#413)."""
+    setpoint_room = make_room(climate_mode="heat_only")
+    valve_room = make_room(climate_mode="heat_only")
+    valve_room["devices"][0]["valve_opening_entity"] = "number.valve_opening_degree"
+    valve_room["devices"][0]["valve_closing_entity"] = "number.valve_closing_degree"
+    common = {
+        "T0": 21.0,
+        "targets": TargetTemps(heat=21.0, cool=24.0),
+        "outdoor": -5.0,
+        "previous_mode": MODE_HEATING,
+        "elapsed_minutes": 30.0,
+    }
+    setpoint = _prediction(TRV, setpoint_room, **common)
+    valve = _prediction(TRV, valve_room, **common)
+    assert max(valve) - min(valve) < max(setpoint) - min(setpoint)

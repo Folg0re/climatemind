@@ -47,8 +47,6 @@ export class ClimateMindPanel extends LitElement {
   @state() private _showHiddenRooms = false;
   @state() private _controlMode: "mpc" | "bangbang" = "mpc";
   @state() private _climateControlActive = true;
-  @state() private _centralHeatingEnabled = false;
-  @state() private _centralHeatingSchedule = "";
   @state() private _presenceEnabled = false;
   @state() private _valveProtectionEnabled = false;
   @state() private _coilDryEnabled = false;
@@ -493,7 +491,10 @@ export class ClimateMindPanel extends LitElement {
             .presencePersons=${this._presencePersons}
             .climateControlActive=${this._climateControlActive}
             .valveProtectionEnabled=${this._valveProtectionEnabled}
-            .centralHeatingEnabled=${this._centralHeatingEnabled}
+            .coilDryEnabled=${this._coilDryEnabled}
+            .coilDryMinutes=${this._coilDryMinutes}
+            .coilDryMode=${this._coilDryMode}
+            .coilDryFanMode=${this._coilDryFanMode}
             @back-clicked=${this._onBackFromDetail}
             @room-updated=${this._onRoomUpdated}
           ></rs-room-detail>
@@ -685,9 +686,7 @@ export class ClimateMindPanel extends LitElement {
   private _computeAreaInfos(): AreaInfo[] {
     if (!this.hass?.areas) return [];
 
-    const areas = Object.entries(this.hass.areas).flatMap(([areaId, area]) =>
-      area && typeof area.name === "string" ? [{ ...area, area_id: areaId }] : [],
-    );
+    const areas = Object.values(this.hass.areas);
 
     const infos: AreaInfo[] = areas.map((area) => {
       const areaEntities = getEntitiesForArea(
@@ -788,8 +787,6 @@ export class ClimateMindPanel extends LitElement {
         group_by_floor: boolean;
         control_mode: "mpc" | "bangbang";
         climate_control_active: boolean;
-        central_heating_enabled: boolean;
-        central_heating_schedule: string;
         presence_enabled: boolean;
         anyone_home: boolean;
         presence_persons: string[];
@@ -812,8 +809,6 @@ export class ClimateMindPanel extends LitElement {
       this._groupByFloor = result.group_by_floor ?? false;
       this._controlMode = result.control_mode ?? "mpc";
       this._climateControlActive = result.climate_control_active ?? true;
-      this._centralHeatingEnabled = result.central_heating_enabled ?? false;
-      this._centralHeatingSchedule = result.central_heating_schedule ?? "";
       this._presenceEnabled = result.presence_enabled ?? false;
       this._valveProtectionEnabled = result.valve_protection_enabled ?? false;
       this._coilDryEnabled = result.coil_dry_enabled ?? false;

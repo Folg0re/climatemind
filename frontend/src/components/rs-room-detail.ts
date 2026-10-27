@@ -1,4 +1,4 @@
-import { html, LitElement, css, nothing } from "lit";
+import { LitElement, html, css, nothing } from "lit";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { customElement, property, state } from "lit/decorators.js";
 import type {
@@ -32,7 +32,7 @@ import { resolveHeatingSystemType } from "../utils/device-utils";
 import type { RsOverrideSection } from "./rs-override-section";
 
 const CONTROL_DOCS_URL =
-  "https://github.com/snazzybean/climatemind/blob/main/docs/control-and-devices.md";
+  "https://github.com/Folg0re/climatemind/blob/main/docs/control-and-devices.md";
 
 type EditableSection = "schedule" | "devices" | "sensors" | "presence" | "covers" | "heatSource";
 
@@ -44,12 +44,12 @@ export class RsRoomDetail extends LitElement {
   @property({ type: Boolean }) public presenceEnabled = false;
   @property({ attribute: false }) public presencePersons: string[] = [];
   @property({ type: Boolean }) public climateControlActive = true;
+
   @property({ type: Boolean }) public valveProtectionEnabled = false;
   @property({ type: Boolean }) public coilDryEnabled = false;
   @property({ type: Number }) public coilDryMinutes = 20;
   @property({ type: String }) public coilDryMode = "fan_only";
   @property({ type: String }) public coilDryFanMode = "low";
-  @property({ type: Boolean }) public centralHeatingEnabled = false; // <-- Aggiunto
 
   @state() private _devices: DeviceConfig[] = [];
   @state() private _selectedTempSensor = "";
@@ -65,8 +65,6 @@ export class RsRoomDetail extends LitElement {
   @state() private _comfortCool = 24.0;
   @state() private _ecoHeat = 17.0;
   @state() private _ecoCool = 27.0;
-  @state() private _calibrationOffset = 0.0;
-  @state() private _manualValveEntity = "";
   @state() private _error = "";
   @state() private _dirty = false;
   @state() private _editing: EditableSection | null = null;
@@ -134,6 +132,9 @@ export class RsRoomDetail extends LitElement {
       }
     }
 
+    /* Section cards handled by rs-section-card */
+
+    /* YAML code block for info panels (slotted into edit dialogs) */
     .yaml-block {
       background: var(--code-editor-background-color, rgba(0, 0, 0, 0.35));
       border: 1px solid var(--divider-color, rgba(255, 255, 255, 0.12));
@@ -154,6 +155,7 @@ export class RsRoomDetail extends LitElement {
       color: #e2a76a;
     }
 
+    /* Actions */
     .actions {
       display: flex;
       align-items: center;
@@ -171,23 +173,6 @@ export class RsRoomDetail extends LitElement {
     .field-hint {
       color: var(--secondary-text-color);
       font-size: 12px;
-    }
-
-    .calibration-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 8px 0;
-    }
-
-    .calibration-input {
-      width: 80px;
-      padding: 4px 8px;
-      background: var(--card-background-color);
-      border: 1px solid var(--divider-color);
-      border-radius: 4px;
-      color: var(--primary-text-color);
-      font-size: 14px;
     }
 
     .exceptions-link {
@@ -286,10 +271,6 @@ export class RsRoomDetail extends LitElement {
       this._comfortCool = this.config.comfort_cool ?? 24.0;
       this._ecoHeat = this.config.eco_heat ?? this.config.eco_temp ?? 17.0;
       this._ecoCool = this.config.eco_cool ?? 27.0;
-      this._calibrationOffset =
-        (this.config as { calibration_offset?: number }).calibration_offset ?? 0.0;
-      this._manualValveEntity =
-        (this.config as { manual_valve_entity?: string }).manual_valve_entity ?? "";
       this._selectedPresencePersons = this.config.presence_persons ?? [];
       this._displayName = this.config.display_name ?? "";
       this._selectedCovers = new Set(this.config.covers ?? []);
@@ -330,8 +311,6 @@ export class RsRoomDetail extends LitElement {
       this._comfortCool = 24.0;
       this._ecoHeat = 17.0;
       this._ecoCool = 27.0;
-      this._calibrationOffset = 0.0;
-      this._manualValveEntity = "";
       this._selectedPresencePersons = [];
       this._displayName = "";
       this._selectedCovers = new Set();
@@ -360,6 +339,7 @@ export class RsRoomDetail extends LitElement {
     }
     this._dirty = false;
 
+    // Unconfigured rooms open the device-edit dialog automatically.
     if (this._devices.length === 0 && this._editing === null) {
       this._editing = "devices";
     }
@@ -373,6 +353,7 @@ export class RsRoomDetail extends LitElement {
     this._editing = null;
   };
 
+  /** Expose effective override for hero-status via the override sub-component. */
   private _getEffectiveOverride(): {
     active: boolean;
     type: import("../types").OverrideType | null;
@@ -386,6 +367,7 @@ export class RsRoomDetail extends LitElement {
     if (overrideEl) {
       return overrideEl.getEffectiveOverride();
     }
+    // Fallback before sub-component mounts
     const live = this.config?.live;
     if (live?.override_active && live.override_type) {
       return {
@@ -401,8 +383,6 @@ export class RsRoomDetail extends LitElement {
 
   render() {
     if (!this.area) return nothing;
-
-    const centralHeatingActive = this.centralHeatingEnabled;
 
     return html`
       <div class="detail-layout">
@@ -463,6 +443,7 @@ export class RsRoomDetail extends LitElement {
                       .ecoHeat=${this._ecoHeat}
                       .ecoCool=${this._ecoCool}
                       .climateMode=${this._climateMode}
+                      .scheduleTempWarnings=${this.config?.live?.schedule_temp_warnings ?? []}
                       .editing=${false}
                       @schedules-changed=${this._onSchedulesChanged}
                       @schedule-selector-changed=${this._onScheduleSelectorChanged}
@@ -508,6 +489,10 @@ export class RsRoomDetail extends LitElement {
                       .selectedTempSensor=${this._selectedTempSensor}
                       .valveProtectionExclude=${this._valveProtectionExclude}
                       .valveProtectionEnabled=${this.valveProtectionEnabled}
+                      .coilDryEnabledGlobal=${this.coilDryEnabled}
+                      .coilDryMinutesGlobal=${this.coilDryMinutes}
+                      .coilDryModeGlobal=${this.coilDryMode}
+                      .coilDryFanModeGlobal=${this.coilDryFanMode}
                       @device-changed=${this._onDeviceChanged}
                       @valve-protection-exclude-toggle=${this._onValveProtectionExcludeToggle}
                     ></rs-device-section>
@@ -533,108 +518,6 @@ export class RsRoomDetail extends LitElement {
                       .language=${this.hass.language}
                       @sensor-changed=${this._onSensorChanged}
                     ></rs-sensor-section>
-                  </rs-section-card>
-
-                  <rs-section-card icon="mdi:tune" heading="Calibrazione">
-                    <ha-icon-button
-                      slot="header-extras"
-                      icon="mdi:pencil"
-                      style="--mdc-icon-size: 18px; color: var(--secondary-text-color);"
-                      title="Modifica entità valvola"
-                      @click=${() => {
-                        const picker = this.shadowRoot?.getElementById("valve-picker-container");
-                        if (picker)
-                          picker.style.display = picker.style.display === "none" ? "block" : "none";
-                      }}
-                    ></ha-icon-button>
-
-                    <div class="calibration-row">
-                      <span>Offset Temperatura (°C)</span>
-                      <input
-                        type="number"
-                        step="0.1"
-                        class="calibration-input"
-                        .value=${this._calibrationOffset.toString()}
-                        @change=${this._onCalibrationOffsetChanged}
-                      />
-                    </div>
-
-                    ${
-                      centralHeatingActive
-                        ? html`
-                            <div
-                              class="calibration-row"
-                              style="margin-top: 12px; border-top: 1px solid var(--divider-color); padding-top: 12px; flex-direction: column; align-items: stretch; gap: 8px;"
-                            >
-                              <div style="display: flex; flex-direction: column;">
-                                <span style="font-size: 13px; font-weight: 500;"
-                                  >Valvola Manuale (0-5)</span
-                                >
-                                <span class="field-hint">
-                                  ${
-                                    this._manualValveEntity
-                                      ? this.hass.states[this._manualValveEntity]?.attributes
-                                          .friendly_name || this._manualValveEntity
-                                      : "Nessun helper associato"
-                                  }
-                                </span>
-                              </div>
-
-                              ${
-                                this._manualValveEntity && this.hass.states[this._manualValveEntity]
-                                  ? html`
-                                      <div
-                                        style="display: flex; align-items: center; gap: 12px; background: var(--secondary-background-color, rgba(0,0,0,0.05)); padding: 8px 12px; border-radius: 8px;"
-                                      >
-                                        <ha-icon
-                                          icon="mdi:radiator"
-                                          style="color: var(--primary-color);"
-                                        ></ha-icon>
-                                        <span
-                                          style="font-weight: 500; min-width: 40px; text-align: right;"
-                                        >
-                                          ${Number(
-                                            this.hass.states[this._manualValveEntity].state,
-                                          ).toFixed(2)}
-                                        </span>
-                                        <input
-                                          type="range"
-                                          min="0"
-                                          max="5"
-                                          step="0.25"
-                                          style="flex: 1; accent-color: var(--primary-color);"
-                                          .value=${this.hass.states[this._manualValveEntity].state}
-                                          @input=${(e: Event) => {
-                                            const val = (e.target as HTMLInputElement).value;
-                                            this.hass.callService("input_number", "set_value", {
-                                              entity_id: this._manualValveEntity,
-                                              value: parseFloat(val),
-                                            });
-                                          }}
-                                        />
-                                      </div>
-                                    `
-                                  : nothing
-                              }
-
-                              <div
-                                id="valve-picker-container"
-                                style="display: ${
-                                  this._manualValveEntity ? "none" : "block"
-                                }; margin-top: 4px;"
-                              >
-                                <ha-entity-picker
-                                  .hass=${this.hass}
-                                  .value=${this._manualValveEntity}
-                                  .includeDomains=${["input_number"]}
-                                  @value-changed=${this._onManualValveEntityChanged}
-                                  style="width: 100%;"
-                                ></ha-entity-picker>
-                              </div>
-                            </div>
-                          `
-                        : nothing
-                    }
                   </rs-section-card>
 
                   ${
@@ -778,17 +661,17 @@ export class RsRoomDetail extends LitElement {
             <div class="yaml-block">
               ${unsafeHTML(
                 '<span class="yaml-key">schedule</span>:\n' +
-                  ' &nbsp;<span class="yaml-key">living_room_heating</span>:\n' +
-                  ' &nbsp; &nbsp;<span class="yaml-key">name</span>: <span class="yaml-value">Living Room Heating</span>\n' +
-                  ' &nbsp; &nbsp;<span class="yaml-key">monday</span>:\n' +
-                  ' &nbsp; &nbsp; &nbsp;- <span class="yaml-key">from</span>: <span class="yaml-value">"06:00:00"</span>\n' +
-                  ' &nbsp; &nbsp; &nbsp; &nbsp;<span class="yaml-key">to</span>: <span class="yaml-value">"08:00:00"</span>\n' +
-                  ' &nbsp; &nbsp; &nbsp; &nbsp;<span class="yaml-key">data</span>:\n' +
-                  ' &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;<span class="yaml-key">temperature</span>: <span class="yaml-value">23</span>\n' +
-                  ' &nbsp; &nbsp; &nbsp;- <span class="yaml-key">from</span>: <span class="yaml-value">"17:00:00"</span>\n' +
-                  ' &nbsp; &nbsp; &nbsp; &nbsp;<span class="yaml-key">to</span>: <span class="yaml-value">"22:00:00"</span>\n' +
-                  ' &nbsp; &nbsp; &nbsp; &nbsp;<span class="yaml-key">data</span>:\n' +
-                  ' &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;<span class="yaml-key">temperature</span>: <span class="yaml-value">21.5</span>',
+                  '  <span class="yaml-key">living_room_heating</span>:\n' +
+                  '    <span class="yaml-key">name</span>: <span class="yaml-value">Living Room Heating</span>\n' +
+                  '    <span class="yaml-key">monday</span>:\n' +
+                  '      - <span class="yaml-key">from</span>: <span class="yaml-value">"06:00:00"</span>\n' +
+                  '        <span class="yaml-key">to</span>: <span class="yaml-value">"08:00:00"</span>\n' +
+                  '        <span class="yaml-key">data</span>:\n' +
+                  '          <span class="yaml-key">temperature</span>: <span class="yaml-value">23</span>\n' +
+                  '      - <span class="yaml-key">from</span>: <span class="yaml-value">"17:00:00"</span>\n' +
+                  '        <span class="yaml-key">to</span>: <span class="yaml-value">"22:00:00"</span>\n' +
+                  '        <span class="yaml-key">data</span>:\n' +
+                  '          <span class="yaml-key">temperature</span>: <span class="yaml-value">21.5</span>',
               )}
             </div>
             <p style="margin-top: 8px">${unsafeHTML(localize("schedule.help_block_note", lang))}</p>
@@ -799,10 +682,10 @@ export class RsRoomDetail extends LitElement {
             <div class="yaml-block">
               ${unsafeHTML(
                 '- <span class="yaml-key">from</span>: <span class="yaml-value">"06:00:00"</span>\n' +
-                  ' &nbsp;<span class="yaml-key">to</span>: <span class="yaml-value">"08:00:00"</span>\n' +
-                  ' &nbsp;<span class="yaml-key">data</span>:\n' +
-                  ' &nbsp; &nbsp;<span class="yaml-key">heat_temperature</span>: <span class="yaml-value">21</span>\n' +
-                  ' &nbsp; &nbsp;<span class="yaml-key">cool_temperature</span>: <span class="yaml-value">24</span>',
+                  '  <span class="yaml-key">to</span>: <span class="yaml-value">"08:00:00"</span>\n' +
+                  '  <span class="yaml-key">data</span>:\n' +
+                  '    <span class="yaml-key">heat_temperature</span>: <span class="yaml-value">21</span>\n' +
+                  '    <span class="yaml-key">cool_temperature</span>: <span class="yaml-value">24</span>',
               )}
             </div>
             <p style="margin-top: 8px">${unsafeHTML(localize("schedule.help_split_note", lang))}</p>
@@ -938,13 +821,13 @@ export class RsRoomDetail extends LitElement {
             <div class="yaml-block">
               ${unsafeHTML(
                 '<span class="yaml-key">schedule</span>:\n' +
-                  ' &nbsp;<span class="yaml-key">cover_evening</span>:\n' +
-                  ' &nbsp; &nbsp;<span class="yaml-key">name</span>: <span class="yaml-value">Cover Evening</span>\n' +
-                  ' &nbsp; &nbsp;<span class="yaml-key">monday</span>:\n' +
-                  ' &nbsp; &nbsp; &nbsp;- <span class="yaml-key">from</span>: <span class="yaml-value">"20:00:00"</span>\n' +
-                  ' &nbsp; &nbsp; &nbsp; &nbsp;<span class="yaml-key">to</span>: <span class="yaml-value">"06:00:00"</span>\n' +
-                  ' &nbsp; &nbsp; &nbsp; &nbsp;<span class="yaml-key">data</span>:\n' +
-                  ' &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;<span class="yaml-key">position</span>: <span class="yaml-value">10</span>',
+                  '  <span class="yaml-key">cover_evening</span>:\n' +
+                  '    <span class="yaml-key">name</span>: <span class="yaml-value">Cover Evening</span>\n' +
+                  '    <span class="yaml-key">monday</span>:\n' +
+                  '      - <span class="yaml-key">from</span>: <span class="yaml-value">"20:00:00"</span>\n' +
+                  '        <span class="yaml-key">to</span>: <span class="yaml-value">"06:00:00"</span>\n' +
+                  '        <span class="yaml-key">data</span>:\n' +
+                  '          <span class="yaml-key">position</span>: <span class="yaml-value">10</span>',
               )}
             </div>
             <b>${localize("covers.info.solar_title", lang)}</b><br />
@@ -1012,6 +895,8 @@ export class RsRoomDetail extends LitElement {
     }
   }
 
+  // ---- Child event handlers ----
+
   private _onModeChanged(e: CustomEvent<{ mode: ClimateMode }>) {
     this._climateMode = e.detail.mode;
     this._autoSave();
@@ -1051,22 +936,12 @@ export class RsRoomDetail extends LitElement {
     this._autoSave();
   }
 
-  private _onCalibrationOffsetChanged(e: Event) {
-    const val = parseFloat((e.target as HTMLInputElement).value);
-    this._calibrationOffset = isNaN(val) ? 0.0 : val;
-    this._autoSave();
-  }
-
-  private _onManualValveEntityChanged(e: CustomEvent) {
-    this._manualValveEntity = e.detail.value;
-    this._autoSave();
-  }
-
   private _onDeviceChanged(e: CustomEvent<{ devices: DeviceConfig[] }>) {
     const oldDeviceIds = new Set(this._devices.map((d) => d.entity_id));
     this._devices = e.detail.devices;
     const newDeviceIds = new Set(this._devices.map((d) => d.entity_id));
 
+    // Clean up valve protection exclude list for removed devices
     for (const eid of oldDeviceIds) {
       if (!newDeviceIds.has(eid) && this._valveProtectionExclude.has(eid)) {
         const nextExclude = new Set(this._valveProtectionExclude);
@@ -1075,6 +950,7 @@ export class RsRoomDetail extends LitElement {
       }
     }
 
+    // Moving to non-TRV: remove from valve protection exclude list
     for (const d of this._devices) {
       if (d.type !== "trv" && this._valveProtectionExclude.has(d.entity_id)) {
         const nextExclude = new Set(this._valveProtectionExclude);
@@ -1125,6 +1001,8 @@ export class RsRoomDetail extends LitElement {
     this._ignorePresence = e.detail;
     this._autoSave();
   }
+
+  // ---- Cover event handlers ----
 
   private _onCoversToggle(e: CustomEvent<{ entityId: string; checked: boolean }>) {
     const { entityId, checked } = e.detail;
@@ -1185,6 +1063,8 @@ export class RsRoomDetail extends LitElement {
     }
   }
 
+  // ---- Heat source orchestration ----
+
   private _onHeatSourceSettingChanged(e: CustomEvent<{ key: string; value: unknown }>) {
     const { key, value } = e.detail;
     e.stopPropagation();
@@ -1196,6 +1076,8 @@ export class RsRoomDetail extends LitElement {
     this._autoSave();
   }
 
+  // ---- Outdoor toggle ----
+
   private _onClimateControlToggle(e: CustomEvent) {
     this._climateControlEnabled = e.detail;
     this._autoSave();
@@ -1205,6 +1087,8 @@ export class RsRoomDetail extends LitElement {
     this._isOutdoor = e.detail;
     this._autoSave();
   }
+
+  // ---- Auto-save ----
 
   private _onDisplayNameChanged(e: CustomEvent<{ value: string }>) {
     this._displayName = e.detail.value;
@@ -1239,8 +1123,6 @@ export class RsRoomDetail extends LitElement {
         comfort_cool: this._comfortCool,
         eco_heat: this._ecoHeat,
         eco_cool: this._ecoCool,
-        calibration_offset: this._calibrationOffset,
-        manual_valve_entity: this._manualValveEntity,
         presence_persons: this._selectedPresencePersons.filter((p) => p),
         display_name: this._displayName,
         covers: [...this._selectedCovers],

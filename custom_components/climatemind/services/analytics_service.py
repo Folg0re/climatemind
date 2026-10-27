@@ -319,14 +319,9 @@ async def build_analytics_data(
                     current_t = p["room_temp"]
                     break
             if current_t is not None:
-                T_out_now = (
-                    coordinator.outdoor_temp_effective
-                    if coordinator.outdoor_temp_effective is not None
-                    else DEFAULT_OUTDOOR_TEMP_FALLBACK
-                )
                 outdoor_series = build_forecast_outdoor_series(
                     coordinator._weather_manager._outdoor_forecast,
-                    T_out_now,
+                    coordinator.outdoor_temp_effective,
                     len(target_forecast),
                 )
                 # Shading factor from current cover positions
@@ -367,7 +362,7 @@ async def build_analytics_data(
                         break
 
                 # Seed the run in progress: without it the prediction starts idle, and a
-                # room inside the start hysteresis predicts a stop RoomMind never makes.
+                # room inside the start hysteresis predicts a stop ClimateMind never makes.
                 sim_prev_mode = coordinator._previous_modes.get(area_id, MODE_IDLE)
                 mode_on_since = coordinator._mode_on_since.get(area_id)
                 sim_mode_elapsed = (time.time() - mode_on_since) / 60.0 if mode_on_since is not None else None
@@ -397,6 +392,10 @@ async def build_analytics_data(
                         mode_elapsed_minutes=sim_mode_elapsed,
                         # AC heating alone in an orchestrated UFH room runs on AC rules
                         run_system=("" if coordinator._heat_source_states.get(area_id) == "secondary" else system_type),
+                        outdoor_known=(
+                            coordinator.outdoor_temp_effective is not None
+                            or bool(coordinator._weather_manager._outdoor_forecast)
+                        ),
                     ),
                 )
 

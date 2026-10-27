@@ -1,22 +1,23 @@
+/**
+ * Shared device utilities for the unified device model.
+ * Mirrors backend logic from custom_components/climatemind/utils/device_utils.py.
+ */
+
 import type { DeviceConfig } from "../types";
 
+const HST_PRIORITY: Record<string, number> = { underfloor: 2, radiator: 1, "": 0 };
+
 /**
- * Determine a human-friendly heating system type from configured devices.
- *
- * Heuristics:
- * - If any device declares `heating_system_type`, use that.
- * - If any device is an `ac`, report `ac`.
- * - If any device is a `trv`, report `radiator`.
- * - Otherwise return empty string.
+ * Resolve room-level heating_system_type from devices.
+ * Most conservative type wins (longest residual heat tau).
+ * Only TRV devices are considered.
  */
-export function resolveHeatingSystemType(devices?: DeviceConfig[] | null): string {
-  if (!devices || devices.length === 0) return "";
-
-  const explicit = devices.find((d) => d.heating_system_type && d.heating_system_type.length > 0);
-  if (explicit) return explicit.heating_system_type as string;
-
-  if (devices.some((d) => d.type === "ac")) return "ac";
-  if (devices.some((d) => d.type === "trv")) return "radiator";
-
-  return "";
+export function resolveHeatingSystemType(devices: DeviceConfig[]): string {
+  let best = "";
+  for (const d of devices) {
+    if (d.type !== "trv") continue;
+    const hst = d.heating_system_type ?? "";
+    if ((HST_PRIORITY[hst] ?? 0) > (HST_PRIORITY[best] ?? 0)) best = hst;
+  }
+  return best;
 }

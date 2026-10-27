@@ -1,7 +1,7 @@
 import { LitElement, html, css, nothing } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import type { HomeAssistant, HassArea, RoomConfig } from "../types";
-import { getModeClass, formatMode } from "../utils/room-state";
+import { getModeClass, formatMode, minutesLeft } from "../utils/room-state";
 import { modeStyles } from "../styles/shared-mode-styles";
 import { localize } from "../utils/localize";
 import { mdiEyeOff } from "../utils/icons";
@@ -207,6 +207,19 @@ export class RsAreaCard extends LitElement {
         background: rgba(158, 158, 158, 0.1);
       }
 
+      .compressor-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 11px;
+        font-weight: 500;
+        padding: 2px 8px 2px 6px;
+        border-radius: 10px;
+        --mdc-icon-size: 14px;
+        color: var(--info-color, #2196f3);
+        background: rgba(33, 150, 243, 0.12);
+      }
+
       .mold-badge {
         display: inline-flex;
         align-items: center;
@@ -368,8 +381,6 @@ export class RsAreaCard extends LitElement {
   ];
 
   render() {
-    if (!this.area) return nothing;
-
     const hasClimateDevices = this.climateEntityCount > 0;
     const hasClimateSelected =
       (this.config?.devices?.length ?? 0) > 0 ||
@@ -514,6 +525,20 @@ export class RsAreaCard extends LitElement {
                     delta: toDisplayDelta(live.mold_prevention_delta, this.hass).toFixed(0),
                     unit: tempUnit(this.hass),
                   })}
+                </span>`
+              : nothing
+          }
+          ${
+            live.compressor_protection_until != null
+              ? html`<span class="compressor-badge">
+                  <ha-icon icon="mdi:timer-sand"></ha-icon>
+                  ${localize(
+                    live.compressor_protection_reason === "min_run"
+                      ? "card.compressor_min_run"
+                      : "card.compressor_min_off",
+                    this.hass.language,
+                    { minutes: minutesLeft(live.compressor_protection_until) },
+                  )}
                 </span>`
               : nothing
           }

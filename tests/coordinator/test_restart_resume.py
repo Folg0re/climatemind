@@ -59,8 +59,19 @@ def test_infer_running_mode(states, expected):
     assert infer_running_mode(hass, room) == expected
 
 
-def test_a_device_roommind_switched_off_is_a_manual_run():
-    """Across an integration reload the command cache survives: RoomMind's last word was off."""
+def test_a_sitting_out_ac_does_not_seed_a_heating_run():
+    """Heat only with a TRV: an AC an older release left heating must not start a TRV run (#476)."""
+    hass = MagicMock()
+    states = {TRV: _state("heat", "idle"), "climate.ac": _state("heat", "heating")}
+    hass.states.get = MagicMock(side_effect=states.get)
+    room = {**_room((TRV, "trv"), ("climate.ac", "ac")), "climate_mode": "heat_only"}
+
+    assert infer_running_mode(hass, room) == MODE_IDLE
+    assert infer_running_mode(hass, {**room, "climate_mode": "auto"}) == MODE_HEATING
+
+
+def test_a_device_climatemind_switched_off_is_a_manual_run():
+    """Across an integration reload the command cache survives: ClimateMind's last word was off."""
     hass = MagicMock()
     hass.states.get = MagicMock(return_value=_state("heat", "heating"))
     mpc_controller._last_commands[TRV] = {"service": "set_hvac_mode", "hvac_mode": "off"}
@@ -102,8 +113,8 @@ async def test_idle_trv_inside_the_band_stays_idle_after_a_restart(hass, mock_co
 
 @pytest.mark.asyncio
 async def test_seed_only_until_the_first_controlled_cycle(hass, mock_config_entry):
-    """Once RoomMind controlled the room, a heating device no longer seeds anything: an
-    idle decision there is RoomMind's own and must stick."""
+    """Once ClimateMind controlled the room, a heating device no longer seeds anything: an
+    idle decision there is ClimateMind's own and must stick."""
     coordinator, _ = await _first_cycle(hass, mock_config_entry, _state("heat", "idle"))
     assert AREA in coordinator._mode_seeded
     hass.states.get = MagicMock(
@@ -155,3 +166,25 @@ def test_rebound_tracker_seeded_run_starts_charged():
     tracker = AcReboundTracker()
     tracker.seed_running("r")
     assert tracker.get_charge("r") == pytest.approx(1.0, abs=1e-3)
+
+
+@pytest.mark.asyncio
+async def test_seeded_run_drops_an_old_idle_start(hass, mock_config_entry, monkeypatch):
+    """A run adopted from the devices is a run: the setback hold must not count the idle before it (#255)."""
+    coordinator, room = await _first_cycle(hass, mock_config_entry, _state("unavailable", None))
+    assert room["mode"] == MODE_IDLE
+    coordinator._idle_since[AREA] -= 7200
+    seen: list[float | None] = []
+    real = mpc_controller.MPCController
+
+    def spy(*a, **kw):
+        seen.append(kw.get("idle_since"))
+        return real(*a, **kw)
+
+    monkeypatch.setattr("custom_components.climatemind.coordinator.MPCController", spy)
+    hass.states.get = MagicMock(
+        side_effect=lambda eid: _state("heat", "heating") if eid == TRV else make_mock_states_get(temp="20.9")(eid)
+    )
+    await coordinator._async_update_data()
+
+    assert seen == [None]

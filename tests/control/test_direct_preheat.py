@@ -19,7 +19,7 @@ from custom_components.climatemind.control.mpc_controller import (
 )
 from custom_components.climatemind.control.mpc_optimizer import MPCPlan
 from custom_components.climatemind.control.thermal_model import RoomModelManager
-from custom_components.climatemind.coordinator import RoomMindCoordinator
+from custom_components.climatemind.coordinator import ClimateMindCoordinator
 from custom_components.climatemind.managers.heat_source_orchestrator import DeviceCommand, HeatSourcePlan
 from custom_components.climatemind.utils.schedule_utils import make_target_resolver
 
@@ -233,12 +233,12 @@ def test_direct_target_public_helper(monkeypatch):
 
 def test_display_shows_the_lead_target():
     assert (
-        RoomMindCoordinator._compute_device_setpoint(
+        ClimateMindCoordinator._compute_device_setpoint(
             MODE_HEATING, 0.8, 19.2, 19.0, True, all_direct=True, direct_offset=1.0, direct_target=21.5
         )
         == 22.5
     )
-    assert RoomMindCoordinator._compute_device_setpoint(MODE_HEATING, 0.8, 19.2, 19.0, True, all_direct=True) == 19.0
+    assert ClimateMindCoordinator._compute_device_setpoint(MODE_HEATING, 0.8, 19.2, 19.0, True, all_direct=True) == 19.0
 
 
 @pytest.mark.asyncio
@@ -261,7 +261,7 @@ def test_orchestrated_display_shows_the_lead_target():
         active_sources="primary",
         reason="test",
     )
-    shown = RoomMindCoordinator._compute_device_setpoint_orchestrated(
+    shown = ClimateMindCoordinator._compute_device_setpoint_orchestrated(
         plan, 19.2, 19.0, 30.0, 30.0, direct_eids={"climate.dev"}, direct_target=21.5
     )
     assert shown == 21.5

@@ -193,6 +193,14 @@ class TestPresenceDetection:
             "presence_persons": ["person.nonexistent"],
         }
         hass.data = {"climatemind": {"store": store}}
+        hass.is_running = True
+        # The entity is gone for good: not in the state machine, not registered.
+        registry = MagicMock()
+        registry.async_get = MagicMock(return_value=None)
+        monkeypatch.setattr(
+            "custom_components.climatemind.utils.presence_utils.er.async_get",
+            lambda _hass: registry,
+        )
 
         # person.nonexistent not in any dict -> returns None (fail-safe: treated as home)
         hass.states.get = MagicMock(side_effect=make_mock_states_get())

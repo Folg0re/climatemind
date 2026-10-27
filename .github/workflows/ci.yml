@@ -46,7 +46,7 @@ jobs:
         ha_tz: ["UTC", "US/Pacific", "Australia/Sydney"]
     env:
       TZ: ${{ matrix.os_tz }} # host/OS timezone (naive datetime, libc)
-      ROOMMIND_TEST_TZ: ${{ matrix.ha_tz }} # HA's configured timezone (dt_util)
+      CLIMATEMIND_TEST_TZ: ${{ matrix.ha_tz }} # HA's configured timezone (dt_util)
     steps:
       - uses: actions/checkout@v7.0.1
 

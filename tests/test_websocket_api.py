@@ -81,8 +81,6 @@ async def test_list_rooms_empty(ws_hass, store, connection):
             "group_by_floor": False,
             "control_mode": "mpc",
             "climate_control_active": True,
-            "central_heating_enabled": False,
-            "central_heating_schedule": "",
             "presence_enabled": False,
             "presence_persons": [],
             "presence_away_action": "eco",
@@ -957,6 +955,7 @@ async def test_list_rooms_includes_compressor_protection_status(ws_hass, store, 
             "mode": "idle",
             "compressor_protection_active": True,
             "compressor_protection_reason": "min_off",
+            "compressor_protection_until": 1_700_000_300.0,
         }
     }
     mock_coordinator.async_request_refresh = AsyncMock()
@@ -970,6 +969,7 @@ async def test_list_rooms_includes_compressor_protection_status(ws_hass, store, 
     live = call_args[0][1]["rooms"]["kinderzimmer"]["live"]
     assert live["compressor_protection_active"] is True
     assert live["compressor_protection_reason"] == "min_off"
+    assert live["compressor_protection_until"] == 1_700_000_300.0
 
 
 @pytest.mark.asyncio
@@ -1345,6 +1345,24 @@ async def test_save_settings_mold_fields(ws_hass, store, connection):
     assert len(settings["mold_notification_targets"]) == 1
     assert settings["mold_prevention_enabled"] is True
     assert settings["mold_prevention_intensity"] == "strong"
+
+
+@pytest.mark.asyncio
+async def test_save_settings_mold_f_rsi_range(ws_hass, store, connection):
+    """mold_f_rsi is stored and limited to the realistic 0.6-0.95 (below, the surface drops under 5 °C and reads ok)."""
+    import voluptuous as vol
+
+    await store.async_load()
+    await _save_settings(ws_hass, connection, {"id": 30, "type": "climatemind/settings/save", "mold_f_rsi": 0.65})
+    assert connection.send_result.call_args[0][1]["settings"]["mold_f_rsi"] == 0.65
+
+    schema = websocket_save_settings._ws_schema
+    base = {"id": 1, "type": "climatemind/settings/save"}
+    assert schema({**base, "mold_f_rsi": "0.9"})["mold_f_rsi"] == 0.9
+    with pytest.raises(vol.Invalid):
+        schema({**base, "mold_f_rsi": 0.5})
+    with pytest.raises(vol.Invalid):
+        schema({**base, "mold_f_rsi": 1.0})
 
 
 @pytest.mark.asyncio

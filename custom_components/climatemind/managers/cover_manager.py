@@ -395,7 +395,7 @@ class CoverManager:
     ) -> CoverDecision:
         current = state.current_position
         target = state.baseline_position if state.baseline_position is not None else 100
-        # The deadband must not end an episode on RoomMind's own intermediate
+        # The deadband must not end an episode on ClimateMind's own intermediate
         # position: it would be handed to the user and kept overnight.
         restore_pending = state.owned and state.last_commanded_position != target
         if current >= target or (abs(target - current) <= COVER_POS_DEADBAND and not restore_pending):

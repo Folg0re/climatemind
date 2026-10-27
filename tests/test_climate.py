@@ -9,7 +9,9 @@ import pytest
 from homeassistant.components.climate import ClimateEntityFeature, HVACMode
 
 from custom_components.climatemind.climate import (
+    OVERRIDE_TURN_ON_REFRESH_DELAY_S,
     ClimateMindOverrideClimate,
+    ClimateMindRoomClimate,
     _create_room_climates,
     async_setup_entry,
 )
@@ -18,10 +20,7 @@ from custom_components.climatemind.const import (
     DEFAULT_COMFORT_HEAT,
     DOMAIN,
     OVERRIDE_CUSTOM,
-    OVERRIDE_TURN_ON_REFRESH_DELAY_S,
 )
-
-RoomMindOverrideClimate = ClimateMindOverrideClimate
 
 
 @pytest.fixture
@@ -42,7 +41,7 @@ def call_later():
     cancel = MagicMock()
     with (
         patch("custom_components.climatemind.climate.async_call_later", return_value=cancel) as later,
-        patch.object(RoomMindOverrideClimate, "async_write_ha_state"),
+        patch.object(ClimateMindOverrideClimate, "async_write_ha_state"),
     ):
         later.cancel = cancel
         yield later
@@ -61,11 +60,10 @@ def _active_auto_room(**overrides):
 
 
 def test_create_room_climates(mock_coordinator):
-    """Factory creates exactly one climate entity per room."""
+    """Factory creates the deprecated override entity next to the room climate entity (#238)."""
     coordinator, _ = mock_coordinator
     climates = _create_room_climates(coordinator, "living_room")
-    assert len(climates) == 1
-    assert isinstance(climates[0], ClimateMindOverrideClimate)
+    assert [type(c) for c in climates] == [ClimateMindOverrideClimate, ClimateMindRoomClimate]
 
 
 def test_unique_id_and_entity_id(mock_coordinator):
@@ -136,9 +134,18 @@ def test_override_entity_auto_reports_range(mock_coordinator):
     entity = ClimateMindOverrideClimate(coordinator, "living_room")
     assert HVACMode.HEAT_COOL in entity.hvac_modes
     assert entity.supported_features & ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
-    assert not entity.supported_features & ClimateEntityFeature.TARGET_TEMPERATURE
     assert entity.target_temperature_low == 21.0
     assert entity.target_temperature_high == 24.0
+
+
+def test_override_entity_auto_accepts_single_temperature(mock_coordinator):
+    """Auto mode also accepts a bare temperature, HA rejects it without the feature (#471)."""
+    coordinator, store = mock_coordinator
+    store.get_room.return_value = _active_auto_room()
+    entity = ClimateMindOverrideClimate(coordinator, "living_room")
+    assert entity.supported_features & ClimateEntityFeature.TARGET_TEMPERATURE
+    # None keeps the dual slider in the thermostat card
+    assert entity.target_temperature is None
 
 
 def test_override_entity_heat_only_single_target(mock_coordinator):
@@ -392,7 +399,7 @@ async def test_repeated_turn_on_on_pending_seed_keeps_masking(mock_coordinator, 
     store.get_room.return_value = _active_auto_room()
     store.async_update_room = AsyncMock()
     coordinator.is_override_seed_pending.return_value = True
-    entity = RoomMindOverrideClimate(coordinator, "living_room")
+    entity = ClimateMindOverrideClimate(coordinator, "living_room")
     await entity.async_set_hvac_mode(HVACMode.HEAT_COOL)
 
     coordinator.is_override_seed_pending.assert_called_once_with("living_room")
@@ -410,7 +417,7 @@ async def test_turn_off_on_pending_seed_still_clears_and_refreshes(mock_coordina
     store.get_room.return_value = _active_auto_room()
     store.async_update_room = AsyncMock()
     coordinator.is_override_seed_pending.return_value = True
-    entity = RoomMindOverrideClimate(coordinator, "living_room")
+    entity = ClimateMindOverrideClimate(coordinator, "living_room")
     await entity.async_set_hvac_mode(HVACMode.OFF)
 
     coordinator.clear_override_seed.assert_called_once_with("living_room")
@@ -450,8 +457,8 @@ async def test_async_setup_entry_creates_entities_for_all_rooms():
     assert coordinator.async_add_climate_entities is async_add_entities
     async_add_entities.assert_called_once()
     entities = async_add_entities.call_args[0][0]
-    assert len(entities) == 2
-    assert all(isinstance(e, ClimateMindOverrideClimate) for e in entities)
+    assert sum(isinstance(e, ClimateMindOverrideClimate) for e in entities) == 2
+    assert sum(isinstance(e, ClimateMindRoomClimate) for e in entities) == 2
     assert "living_room" in coordinator._climate_entity_areas
     assert "bedroom" in coordinator._climate_entity_areas
 
@@ -495,7 +502,7 @@ async def test_set_hvac_mode_seeds_override_from_effective_targets(mock_coordina
     }
     _live(coordinator, heat_target=24.5, cool_target=26.0)
     store.async_update_room = AsyncMock()
-    entity = RoomMindOverrideClimate(coordinator, "living_room")
+    entity = ClimateMindOverrideClimate(coordinator, "living_room")
     await entity.async_set_hvac_mode(HVACMode.HEAT_COOL)
     written = store.async_update_room.await_args[0][1]
     assert written["override_heat"] == 24.5
@@ -516,7 +523,7 @@ async def test_set_hvac_mode_seed_excludes_mold_prevention_delta(mock_coordinato
         mold_prevention_delta=2.0,
     )
     store.async_update_room = AsyncMock()
-    entity = RoomMindOverrideClimate(coordinator, "living_room")
+    entity = ClimateMindOverrideClimate(coordinator, "living_room")
     await entity.async_set_hvac_mode(HVACMode.HEAT_COOL)
     assert store.async_update_room.await_args[0][1]["override_heat"] == 21.0
 
@@ -528,7 +535,7 @@ async def test_set_hvac_mode_seed_falls_back_to_comfort_when_forced_off(mock_coo
     store.get_room.return_value = {"climate_mode": "auto", "comfort_heat": 22.0, "comfort_cool": 25.0}
     _live(coordinator, heat_target=None, cool_target=None)
     store.async_update_room = AsyncMock()
-    entity = RoomMindOverrideClimate(coordinator, "living_room")
+    entity = ClimateMindOverrideClimate(coordinator, "living_room")
     await entity.async_set_hvac_mode(HVACMode.HEAT_COOL)
     written = store.async_update_room.await_args[0][1]
     assert (written["override_heat"], written["override_cool"]) == (22.0, 25.0)
@@ -541,7 +548,7 @@ async def test_set_hvac_mode_seed_masks_unusable_side(mock_coordinator):
     store.get_room.return_value = {"climate_mode": "heat_only"}
     _live(coordinator, heat_target=21.0, cool_target=26.0)
     store.async_update_room = AsyncMock()
-    entity = RoomMindOverrideClimate(coordinator, "living_room")
+    entity = ClimateMindOverrideClimate(coordinator, "living_room")
     await entity.async_set_hvac_mode(HVACMode.HEAT)
     written = store.async_update_room.await_args[0][1]
     assert (written["override_heat"], written["override_cool"]) == (21.0, None)
@@ -553,7 +560,7 @@ async def test_set_range_low_only_keeps_active_cool_side(mock_coordinator):
     coordinator, store = mock_coordinator
     store.get_room.return_value = _active_auto_room(override_heat=21.0, override_cool=26.0)
     store.async_update_room = AsyncMock()
-    entity = RoomMindOverrideClimate(coordinator, "living_room")
+    entity = ClimateMindOverrideClimate(coordinator, "living_room")
     await entity.async_set_temperature(target_temp_low=22.0)
     written = store.async_update_room.await_args[0][1]
     assert (written["override_heat"], written["override_cool"]) == (22.0, 26.0)
@@ -565,7 +572,7 @@ async def test_set_range_high_only_keeps_active_heat_side(mock_coordinator):
     coordinator, store = mock_coordinator
     store.get_room.return_value = _active_auto_room(override_heat=21.0, override_cool=26.0)
     store.async_update_room = AsyncMock()
-    entity = RoomMindOverrideClimate(coordinator, "living_room")
+    entity = ClimateMindOverrideClimate(coordinator, "living_room")
     await entity.async_set_temperature(target_temp_high=28.5)
     written = store.async_update_room.await_args[0][1]
     assert (written["override_heat"], written["override_cool"]) == (21.0, 28.5)
@@ -578,7 +585,7 @@ async def test_set_range_half_without_override_uses_effective_band(mock_coordina
     store.get_room.return_value = {"climate_mode": "auto"}
     _live(coordinator, heat_target=22.5, cool_target=26.0)
     store.async_update_room = AsyncMock()
-    entity = RoomMindOverrideClimate(coordinator, "living_room")
+    entity = ClimateMindOverrideClimate(coordinator, "living_room")
     await entity.async_set_temperature(target_temp_high=28.5)
     written = store.async_update_room.await_args[0][1]
     assert (written["override_heat"], written["override_cool"]) == (22.5, 28.5)
@@ -590,7 +597,7 @@ async def test_set_range_half_never_inverts_band(mock_coordinator):
     coordinator, store = mock_coordinator
     store.get_room.return_value = _active_auto_room(override_heat=21.0, override_cool=24.0)
     store.async_update_room = AsyncMock()
-    entity = RoomMindOverrideClimate(coordinator, "living_room")
+    entity = ClimateMindOverrideClimate(coordinator, "living_room")
     await entity.async_set_temperature(target_temp_low=26.0)
     written = store.async_update_room.await_args[0][1]
     assert (written["override_heat"], written["override_cool"]) == (26.0, 26.0)
@@ -606,7 +613,7 @@ async def test_set_hvac_mode_seed_ignores_room_temperature(mock_coordinator):
     store.get_room.return_value = {"climate_mode": "auto"}
     _live(coordinator, heat_target=21.0, cool_target=24.0, current_temp=14.0, commanded_mode="idle")
     store.async_update_room = AsyncMock()
-    entity = RoomMindOverrideClimate(coordinator, "living_room")
+    entity = ClimateMindOverrideClimate(coordinator, "living_room")
     await entity.async_set_hvac_mode(HVACMode.HEAT_COOL)
     written = store.async_update_room.await_args[0][1]
     assert (written["override_heat"], written["override_cool"]) == (21.0, 24.0)
@@ -619,7 +626,7 @@ async def test_turn_on_defers_refresh_and_updates_entity_state(mock_coordinator,
     store.get_room.return_value = {"climate_mode": "auto"}
     _live(coordinator, heat_target=21.0, cool_target=24.0)
     store.async_update_room = AsyncMock()
-    entity = RoomMindOverrideClimate(coordinator, "living_room")
+    entity = ClimateMindOverrideClimate(coordinator, "living_room")
     await entity.async_set_hvac_mode(HVACMode.HEAT_COOL)
 
     entity.async_write_ha_state.assert_called_once()
@@ -647,7 +654,7 @@ async def test_turn_on_then_set_temperature_refreshes_once_with_final_values(moc
 
     store.async_update_room = AsyncMock(side_effect=_update)
     _live(coordinator, heat_target=22.5, cool_target=24.0)
-    entity = RoomMindOverrideClimate(coordinator, "living_room")
+    entity = ClimateMindOverrideClimate(coordinator, "living_room")
 
     await entity.async_set_hvac_mode(HVACMode.HEAT_COOL)
     coordinator.async_request_refresh.assert_not_awaited()
@@ -664,7 +671,7 @@ async def test_repeated_turn_on_cancels_previous_timer(mock_coordinator, call_la
     coordinator, store = mock_coordinator
     store.get_room.return_value = {"climate_mode": "auto"}
     store.async_update_room = AsyncMock()
-    entity = RoomMindOverrideClimate(coordinator, "living_room")
+    entity = ClimateMindOverrideClimate(coordinator, "living_room")
     await entity.async_set_hvac_mode(HVACMode.HEAT_COOL)
     await entity.async_set_hvac_mode(HVACMode.HEAT_COOL)
     call_later.cancel.assert_called_once()
@@ -676,7 +683,7 @@ async def test_turn_off_cancels_pending_refresh_and_refreshes(mock_coordinator, 
     coordinator, store = mock_coordinator
     store.get_room.return_value = {"climate_mode": "auto"}
     store.async_update_room = AsyncMock()
-    entity = RoomMindOverrideClimate(coordinator, "living_room")
+    entity = ClimateMindOverrideClimate(coordinator, "living_room")
     await entity.async_set_hvac_mode(HVACMode.HEAT_COOL)
     await entity.async_set_hvac_mode(HVACMode.OFF)
     call_later.cancel.assert_called_once()
@@ -688,7 +695,7 @@ async def test_removal_cancels_pending_refresh(mock_coordinator, call_later):
     coordinator, store = mock_coordinator
     store.get_room.return_value = {"climate_mode": "auto"}
     store.async_update_room = AsyncMock()
-    entity = RoomMindOverrideClimate(coordinator, "living_room")
+    entity = ClimateMindOverrideClimate(coordinator, "living_room")
     await entity.async_set_hvac_mode(HVACMode.HEAT_COOL)
     with patch("custom_components.climatemind.climate.CoordinatorEntity.async_will_remove_from_hass", AsyncMock()):
         await entity.async_will_remove_from_hass()

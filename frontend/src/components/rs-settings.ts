@@ -36,8 +36,6 @@ export class RsSettings extends LitElement {
 
   @state() private _groupByFloor = false;
   @state() private _climateControlActive = true;
-  @state() private _centralHeatingEnabled = false;
-  @state() private _centralHeatingSchedule = "";
   @state() private _learningDisabledRooms: string[] = [];
   @state() private _outdoorTempSensor = "";
   @state() private _outdoorHumiditySensor = "";
@@ -60,6 +58,7 @@ export class RsSettings extends LitElement {
   @state() private _valveProtectionInterval = 7;
   @state() private _moldDetectionEnabled = false;
   @state() private _moldHumidityThreshold = 70;
+  @state() private _moldFRsi = 0.8;
   @state() private _moldSustainedMinutes = 30;
   @state() private _moldNotificationCooldown = 60;
   @state() private _moldNotificationsEnabled = true;
@@ -94,12 +93,9 @@ export class RsSettings extends LitElement {
       const result = await this.hass.callWS<{ settings: GlobalSettings }>({
         type: "climatemind/settings/get",
       });
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- settings payload includes custom fields
-      const s = result.settings as Record<string, any>;
+      const s = result.settings;
       this._groupByFloor = s.group_by_floor ?? false;
       this._climateControlActive = s.climate_control_active ?? true;
-      this._centralHeatingEnabled = s.central_heating_enabled ?? false;
-      this._centralHeatingSchedule = s.central_heating_schedule ?? "";
       this._learningDisabledRooms = s.learning_disabled_rooms ?? [];
       this._outdoorTempSensor = s.outdoor_temp_sensor ?? "";
       this._outdoorHumiditySensor = s.outdoor_humidity_sensor ?? "";
@@ -127,6 +123,7 @@ export class RsSettings extends LitElement {
       this._valveProtectionInterval = s.valve_protection_interval_days ?? 7;
       this._moldDetectionEnabled = s.mold_detection_enabled ?? false;
       this._moldHumidityThreshold = s.mold_humidity_threshold ?? 70;
+      this._moldFRsi = s.mold_f_rsi ?? 0.8;
       this._moldSustainedMinutes = s.mold_sustained_minutes ?? 30;
       this._moldNotificationCooldown = s.mold_notification_cooldown ?? 60;
       this._moldNotificationsEnabled = s.mold_notifications_enabled ?? true;
@@ -167,8 +164,6 @@ export class RsSettings extends LitElement {
           .hass=${this.hass}
           .groupByFloor=${this._groupByFloor}
           .climateControlActive=${this._climateControlActive}
-          .centralHeatingEnabled=${this._centralHeatingEnabled}
-          .centralHeatingSchedule=${this._centralHeatingSchedule}
           @setting-changed=${this._onSettingChanged}
         ></rs-settings-general>
       </rs-settings-panel>
@@ -282,6 +277,7 @@ export class RsSettings extends LitElement {
           .hass=${this.hass}
           .moldDetectionEnabled=${this._moldDetectionEnabled}
           .moldHumidityThreshold=${this._moldHumidityThreshold}
+          .moldFRsi=${this._moldFRsi}
           .moldSustainedMinutes=${this._moldSustainedMinutes}
           .moldPreventionEnabled=${this._moldPreventionEnabled}
           .moldPreventionIntensity=${this._moldPreventionIntensity}
@@ -384,8 +380,6 @@ export class RsSettings extends LitElement {
         type: "climatemind/settings/save",
         group_by_floor: this._groupByFloor,
         climate_control_active: this._climateControlActive,
-        central_heating_enabled: this._centralHeatingEnabled,
-        central_heating_schedule: this._centralHeatingSchedule,
         learning_disabled_rooms: this._learningDisabledRooms,
         outdoor_temp_sensor: this._outdoorTempSensor,
         outdoor_humidity_sensor: this._outdoorHumiditySensor,
@@ -418,6 +412,7 @@ export class RsSettings extends LitElement {
         coil_dry_drain_minutes: this._coilDryDrainMinutes,
         mold_detection_enabled: this._moldDetectionEnabled,
         mold_humidity_threshold: this._moldHumidityThreshold,
+        mold_f_rsi: this._moldFRsi,
         mold_sustained_minutes: this._moldSustainedMinutes,
         mold_notification_cooldown: this._moldNotificationCooldown,
         mold_notifications_enabled: this._moldNotificationsEnabled,

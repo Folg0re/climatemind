@@ -185,7 +185,7 @@ async def test_heating_clears_wetness(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_no_accumulation_when_not_commandable(monkeypatch):
-    """Climate control disabled -> RoomMind is not cooling anything."""
+    """Climate control disabled -> ClimateMind is not cooling anything."""
     import custom_components.climatemind.managers.ac_coil_dry_manager as mod
 
     monkeypatch.setattr(mod.time, "time", lambda: 500.0)
@@ -500,6 +500,23 @@ async def test_unsupported_fan_mode_is_skipped(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_fan_mode_is_matched_to_the_devices_spelling(monkeypatch):
+    """The default coil dry fan mode 'low' reaches a device that calls it 'Low'."""
+    import custom_components.climatemind.managers.ac_coil_dry_manager as mod
+
+    now = [0.0]
+    monkeypatch.setattr(mod.time, "time", lambda: now[0])
+    hass = build_hass(fan_modes=["Auto", "Low", "High"], fan_mode="Auto")
+    mgr = AcCoilDryManager(hass)
+
+    await _wet(mgr, now)
+    calls = [c for c in hass.services.async_call.call_args_list if c[0][1] == "set_fan_mode"]
+    assert [c[0][2]["fan_mode"] for c in calls] == ["Low"]
+    # The device's name is kept, so the restore recognises the speed it set
+    assert mgr.state_for(AC_EID).fan_mode == "Low"
+
+
+@pytest.mark.asyncio
 async def test_drain_phase_reasserts_idle_each_cycle(monkeypatch):
     """Mid-drain (before phase_until), the device is held off again every cycle.
 
@@ -614,7 +631,7 @@ async def test_no_run_during_heating_even_with_zero_threshold(monkeypatch):
 @pytest.mark.asyncio
 async def test_no_run_when_not_commandable_even_with_wet_seconds_over_threshold(monkeypatch):
     """``commandable=False`` (climate_control_active off / startup guard) must
-    block a start outright — contract #36 forbids RoomMind from sending any
+    block a start outright — contract #36 forbids ClimateMind from sending any
     command at all, and a fresh drying run would send set_hvac_mode/set_fan_mode.
     """
     import custom_components.climatemind.managers.ac_coil_dry_manager as mod

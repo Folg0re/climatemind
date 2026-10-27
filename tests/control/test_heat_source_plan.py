@@ -759,7 +759,7 @@ async def test_heat_source_plan_managed_mode_no_external_sensor():
 
 @pytest.mark.asyncio
 async def test_apply_orchestrated_forced_on_overrides_inactive():
-    """Forced_on overrides orchestrator marking device as inactive."""
+    """A forced_on device the orchestrator parked is held, not commanded (#436)."""
     from custom_components.climatemind.managers.heat_source_orchestrator import (
         DeviceCommand,
         HeatSourcePlan,
@@ -861,7 +861,7 @@ async def test_apply_orchestrated_forced_off_overrides_active():
 
 @pytest.mark.asyncio
 async def test_apply_orchestrated_forced_on_ac():
-    """Orchestrated forced_on AC gets heat mode + heat target."""
+    """A running AC the plan parked inside its min-run is neither turned off nor given a bare target (#436)."""
     from custom_components.climatemind.managers.heat_source_orchestrator import (
         DeviceCommand,
         HeatSourcePlan,
@@ -906,16 +906,8 @@ async def test_apply_orchestrated_forced_on_ac():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("hvac_modes", "expected_mode"),
-    [
-        (["heat_cool", "cool", "off"], "heat_cool"),
-        (["auto", "cool", "off"], "auto"),
-        (["cool", "off"], None),
-    ],
-)
-async def test_apply_orchestrated_forced_on_ac_mode_fallbacks(hvac_modes, expected_mode):
-    """Orchestrated forced_on AC without 'heat' falls back to heat_cool/auto or skips entirely."""
+async def test_apply_orchestrated_forced_on_running_ac_keeps_setpoint():
+    """A parked AC that is still running inside its min-run is left alone (#436)."""
     from custom_components.climatemind.managers.heat_source_orchestrator import (
         DeviceCommand,
         HeatSourcePlan,

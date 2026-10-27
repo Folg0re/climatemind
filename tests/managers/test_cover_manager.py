@@ -1657,7 +1657,12 @@ def test_restart_state_never_retracts_unknown_position():
 
 
 @patch("custom_components.climatemind.managers.cover_manager.time")
-def test_retract_within_deadband_ends_episode_without_command(mock_t):
+def test_retract_restores_owned_position_inside_deadband(mock_t):
+    """An owned intermediate position near the baseline is still restored.
+
+    The deadband spares the motor for small modulation steps, but ending the
+    episode at ClimateMind's own 90 % would hand that position to the user.
+    """
     mgr = CoverManager()
     mock_t.time.return_value = 1000.0
     state = mgr._get_state("lr")
@@ -1729,7 +1734,7 @@ def test_evening_modulation_never_strands_cover_as_user_position(mock_t):
     """Sim covers-solar-south: two shading days, no user interaction.
 
     Day 1 modulation ends at 92 (8 below the baseline 100), day 2 at 74
-    (18 below). Both are RoomMind's own positions and must be retracted;
+    (18 below). Both are ClimateMind's own positions and must be retracted;
     before the fix the cover stayed at 74 overnight with user_position_hold.
     Partial reopening needs a large step and an hour since the last move.
     """

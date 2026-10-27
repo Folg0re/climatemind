@@ -102,14 +102,24 @@ export class RsAnalyticsModel extends LitElement {
             <div class="confidence-bar">
               <div class="confidence-fill" style="width: ${hasModel ? confidencePct : 0}%"></div>
             </div>
-            <div class="control-mode-badge ${mpcActive ? "mpc" : "bangbang"}">
-              <ha-icon icon=${mpcActive ? "mdi:brain" : "mdi:school-outline"}></ha-icon>
-              ${
-                mpcActive
-                  ? localize("analytics.control_mode_mpc", l)
-                  : localize("analytics.control_mode_bangbang", l)
-              }
-            </div>
+            ${
+              // Managed rooms (no external sensor) never run MPC, so "learning" would stay forever.
+              this.managed
+                ? nothing
+                : this.controlMode === "bangbang"
+                  ? html`<div class="control-mode-badge bangbang">
+                      <ha-icon icon="mdi:power"></ha-icon>
+                      ${localize("settings.control_mode_simple", l)}
+                    </div>`
+                  : html`<div class="control-mode-badge ${mpcActive ? "mpc" : "bangbang"}">
+                      <ha-icon icon=${mpcActive ? "mdi:brain" : "mdi:school-outline"}></ha-icon>
+                      ${
+                        mpcActive
+                          ? localize("analytics.control_mode_mpc", l)
+                          : localize("analytics.control_mode_bangbang", l)
+                      }
+                    </div>`
+            }
             ${
               this._expandedStat === "confidence"
                 ? html`<div class="info-panel stat-info-panel">
@@ -176,6 +186,7 @@ export class RsAnalyticsModel extends LitElement {
                     "analytics.solar_gain",
                     "",
                     "analytics.info.solar_gain",
+                    this._solarSub(m),
                   )
                 : nothing
             }

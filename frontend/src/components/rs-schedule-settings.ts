@@ -167,6 +167,7 @@ export class RsScheduleSettings extends RsScheduleBase {
                       >
                       <span class="schedule-status">${this._getStatusText(index, state)}</span>
                     </div>
+                    ${this._renderRejectedTempWarning(state)}
                   `;
                 })}
               </div>

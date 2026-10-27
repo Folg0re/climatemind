@@ -1,4 +1,4 @@
-"""AC evaporator coil drying (anti-odour) manager for RoomMind.
+"""AC evaporator coil drying (anti-odour) manager for ClimateMind.
 
 An AC that is cut hard out of cooling leaves a wet evaporator behind: biofilm
 grows on it and the next cooling start smells musty.  This manager runs the
@@ -22,8 +22,8 @@ from dataclasses import dataclass, field
 
 from homeassistant.core import HomeAssistant
 
-from ..const import MODE_COOLING, MODE_HEATING, TargetTemps, make_roommind_context
-from ..control.mpc_controller import async_idle_device
+from ..const import MODE_COOLING, MODE_HEATING, TargetTemps, make_climatemind_context
+from ..control.mpc_controller import async_idle_device, match_fan_mode
 from ..utils.device_utils import (
     COIL_DRY_MODE_DRY,
     COIL_DRY_PHASE_BLOW,
@@ -97,7 +97,7 @@ class AcCoilDryManager:
         """Advance the state machine for every AC in this room.
 
         ``commandable`` is ``climate_active and not waiting_for_data`` — when
-        False, RoomMind must send no commands at all (see #36).
+        False, ClimateMind must send no commands at all (see #36).
         """
         result = CoilDryRoomResult()
         now = time.time()
@@ -316,8 +316,10 @@ class AcCoilDryManager:
             return
         state = self.hass.states.get(eid)
         fan_modes: list[str] = (state.attributes.get("fan_modes") or []) if state else []
-        if st.fan_mode in fan_modes:
-            await self._call(eid, "set_fan_mode", {"fan_mode": st.fan_mode}, area_id)
+        fan_mode = match_fan_mode(state, st.fan_mode)
+        if fan_mode is not None:
+            st.fan_mode = fan_mode
+            await self._call(eid, "set_fan_mode", {"fan_mode": fan_mode}, area_id)
         else:
             _LOGGER.debug(
                 "Area '%s': device '%s' does not support fan_mode '%s' (available: %s), keeping current",
@@ -417,7 +419,7 @@ class AcCoilDryManager:
                 service,
                 {"entity_id": eid, **data},
                 blocking=True,
-                context=make_roommind_context(),
+                context=make_climatemind_context(),
             )
         except Exception:  # noqa: BLE001
             _LOGGER.warning("Area '%s': coil dry climate.%s failed on '%s'", area_id, service, eid, exc_info=True)

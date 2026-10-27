@@ -37,11 +37,15 @@ export class RsSettingsVacation extends RsSettingsBase {
       ${
         this.vacationActive
           ? html`
-              <div class="threshold-grid" style="margin-top: 12px">
+              <div class="threshold-grid" style="margin-top: 12px; align-items: end">
                 <div class="threshold-field">
+                  <label class="field-label" for="vacation-until"
+                    >${localize("vacation.end_date", l)}</label
+                  >
                   <ha-textfield
+                    id="vacation-until"
                     .value=${this.vacationUntil}
-                    .label=${localize("vacation.end_date", l)}
+                    aria-label=${localize("vacation.end_date", l)}
                     type="datetime-local"
                     @change=${(e: Event) =>
                       this._fire("vacationUntil", (e.target as HTMLInputElement).value)}

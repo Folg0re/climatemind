@@ -2,14 +2,14 @@
 
 [![HACS Default](https://img.shields.io/badge/HACS-Default-orange.svg)](https://github.com/hacs/integration)
 [![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2026.2%2B-blue.svg)](https://www.home-assistant.io/)
-[![License](https://img.shields.io/github/license/snazzybean/climatemind)](https://github.com/snazzybean/climatemind/blob/main/LICENSE)
-[![Tests](https://github.com/snazzybean/climatemind/actions/workflows/ci.yml/badge.svg)](https://github.com/snazzybean/climatemind/actions/workflows/ci.yml)
-![Coverage](https://raw.githubusercontent.com/snazzybean/climatemind/python-coverage-comment-action-data/badge.svg)
-[![GitHub Release](https://img.shields.io/github/v/release/snazzybean/climatemind)](https://github.com/snazzybean/climatemind/releases/latest)
+[![License](https://img.shields.io/github/license/Folg0re/climatemind)](https://github.com/Folg0re/climatemind/blob/main/LICENSE)
+[![Tests](https://github.com/Folg0re/climatemind/actions/workflows/ci.yml/badge.svg)](https://github.com/Folg0re/climatemind/actions/workflows/ci.yml)
+![Coverage](https://raw.githubusercontent.com/Folg0re/climatemind/python-coverage-comment-action-data/badge.svg)
+[![GitHub Release](https://img.shields.io/github/v/release/Folg0re/climatemind)](https://github.com/Folg0re/climatemind/releases/latest)
 
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/Y8Y31VP2VK)
 
-**Intelligent room climate control for Home Assistant** - self-learning MPC, solar gain modeling, central heating management
+**Intelligent room climate control for Home Assistant** - self-learning thermal model, proportional valve control, and a dedicated management panel.
 
 ![Dashboard](docs/images/page-dashboard.png)
 
@@ -24,13 +24,15 @@
 - **Ignore Presence per Room** - Rooms can opt out of presence detection to always follow their schedule.
 - **Vacation Mode** - Global setback temperature with end date for all rooms.
 - **Window/Door Pause** - Pauses climate control when windows or doors are open, with configurable open/close delays.
+  After a restart, ClimateMind waits until the window sensors report a state (at most 5 minutes; a sensor that is still unavailable then counts as closed). A sensor that no longer exists at all (deleted or renamed) counts as closed right away once Home Assistant has finished starting, with a warning in the log. A sensor that drops out briefly keeps its last state.
 - **Mold Risk Detection & Prevention** - Surface humidity estimation using the DIN 4108-2 method. Configurable notifications and automatic temperature raise to prevent mold growth.
 - **Automatic Blind/Cover Shading** - Smart cover deployment based on predicted solar overheating. Includes night close, manual override detection, and cover schedules.
 - **Valve Protection** - Periodic cycling of idle TRV valves to prevent seizing and calcification.
 - **Heat Source Orchestration** - Rooms with both TRVs and ACs automatically route heating demand to the most efficient device based on temperature gap and outdoor conditions.
-- **Compressor Group Protection** - Define groups of climate devices sharing an outdoor compressor. Enforces minimum run and off times to prevent short-cycling.
-- **Fan-only & Setback Idle Modes** - AC and heat pump devices can switch to fan-only or setback mode instead of turning off, keeping air circulation or low-load operation active.
-- **Per-Device Setpoint Mode** - Choose proportional (boost setpoint) or direct (exact target) control per device for optimal results with different hardware.
+- **Compressor Group Protection** - Define groups of climate devices sharing an outdoor compressor. Enforces minimum run and off times to prevent short-cycling. Until `min_run_minutes` has elapsed, a device keeps its last active setpoint, including a boost setpoint, so the room can overshoot its target further than without protection. A target that changes on purpose in the meantime (override, vacation, schedule off, presence) is passed on to the device right away (a device with a single heat/cool setpoint only when that cannot push the room the wrong way).
+- **Fan-only & Setback Idle Modes** - AC and heat pump devices can switch to fan-only or setback mode instead of turning off, keeping air circulation or low-load operation active. Setback still turns the device off after a long pause with no demand ahead.
+- **Per-Device Setpoint Mode** - Choose proportional (boost setpoint) or direct (exact target) control per device for optimal results with different hardware. For direct devices whose internal sensor reads differently from your room sensor, a setpoint offset shifts the temperature sent to the device.
+- **Direct Valve Control** - TRVs that expose their valve opening as `number` entities (e.g. SONOFF TRVZB) are held at the opening the room needs instead of switching between fully open and closed: fewer valve movements, quieter and steadier heat.
 - **Separate Heat/Cool Targets** - Independent comfort and eco temperatures for heating and cooling in auto mode, creating a natural dead-band.
 - **Per-Room Climate Toggle** - Disable climate control for individual rooms while keeping other rooms active.
 - **Outdoor Areas** - Mark rooms as outdoor (e.g. balcony) to disable climate control while keeping monitoring.
@@ -40,7 +42,7 @@
 
 ## Installation
 
-[![Open your Home Assistant instance and open ClimateMind inside HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=snazzybean&repository=climatemind&category=integration)
+[![Open your Home Assistant instance and open ClimateMind inside HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Folg0re&repository=climatemind&category=integration)
 
 ### HACS (Recommended)
 
@@ -101,26 +103,62 @@ The Extended Kalman Filter observes temperature changes and learns each room's h
 
 Until calibrated (~60 idle + ~20 active samples), ClimateMind falls back to simple on/off control with hysteresis.
 
+`Settings -> Control -> Control Mode` decides whether MPC is used at all. **Intelligent (MPC)** is the default. **Simple** keeps every room on the on/off control with hysteresis; the thermal model still learns in the background and feeds the analytics prediction, but it never makes heating or cooling decisions. Automatic blinds then shade from a simpler solar estimate instead of the MPC forecast.
+
 For a more detailed explanation of the `Priority` slider, device types, setpoint modes, idle behavior, and smart source selection, see the [Control and Device Guide](docs/control-and-devices.md).
 
 ## Entities Created
 
 | Entity | Description |
 |--------|-------------|
-| `sensor.climatemind_{area_id}_target_temp` | Current target temperature |
-| `sensor.climatemind_{area_id}_mode` | Current mode: `idle`, `heating`, or `cooling` |
-| `climate.climatemind_{area_id}_override` | Manual override climate entity (controllable from dashboards, automations, voice) |
+| `climate.climatemind_{area_id}` | The room as one thermostat, see [Room climate entity](#room-climate-entity) |
 | `switch.climatemind_vacation` | Global vacation mode toggle |
 | `switch.climatemind_{area_id}_cover_auto` | Per-room automatic cover control toggle |
 | `binary_sensor.climatemind_{area_id}_cover_paused` | On when manual cover override is detected |
 
 These can be used in HA automations, dashboards, or other integrations.
 
+### Room climate entity
+
+`climate.climatemind_{area_id}` shows and controls a room the way a thermostat card, an automation or a voice assistant expects:
+
+| Climate feature | In ClimateMind |
+|---|---|
+| Target temperature (range in Auto mode) | The targets currently in force. Changing it sets an override that holds until the next change of the active schedule, like a thermostat's temporary hold. Without a schedule it holds until you pick the preset `none`. Sending the value already in force changes nothing. A single temperature in Auto mode (e.g. from a voice assistant) sets the heating side and keeps the cooling side at least at comfort cooling. |
+| Presets Comfort / Eco | Comfort or eco override, also until the next schedule change |
+| Preset Manual | Shown while a custom temperature is held (set here, in the panel or on the old override entity); picking it holds the targets in force until the next schedule change |
+| Preset Schedule (`none`) | Ends the override and returns to the schedule |
+| HVAC mode `heat` / `cool` / `heat_cool` | Climate mode Heat only / Cool only / Auto, and turns control on. `climate.turn_on` turns control on and keeps the climate mode. In Heat only, an AC in a room with thermostats stays off unless Smart source selection is on. |
+| HVAC mode `off` | Switches the room's devices off and stops controlling them |
+| `hvac_action` | What ClimateMind is doing: `heating`, `cooling`, `idle` or `off` |
+| Current temperature and humidity | The room's readings |
+
+Attributes: `override_until`, `window_open`, `presence_away`, `vacation`. An open window shows as `idle` with `window_open: true`.
+
+The entity is placed in the room's area once when it is created, so it shows up on area cards and Assist finds it by the area ("set the temperature in the living room to 22"). An area you change or remove later is kept. For voice control, hide the room's own thermostats and ACs from Assist (Settings → Voice assistants → Expose), otherwise Assist finds several climate entities in the room and cannot pick one.
+
+Like every override, one set here also lifts the outdoor temperature limits for heating and cooling while it lasts.
+
+A wall display or a thermostat ClimateMind does not control can be linked with an automation: its setpoint → `climate.set_temperature` on the room entity, and the room entity's target → the display, so the display always shows what applies.
+
+### Deprecated entities
+
+These per-room entities still work but will be removed in a future release. If automations or scripts reference them directly, Home Assistant shows a repair notice listing them; uses inside templates or dashboards are not detected, but every service call to an old entity logs a warning once.
+
+| Old entity | Use instead |
+|---|---|
+| `sensor.climatemind_{area_id}_target_temp` | Target temperature of `climate.climatemind_{area_id}` |
+| `sensor.climatemind_{area_id}_mode` | `hvac_action` of `climate.climatemind_{area_id}` |
+| `climate.climatemind_{area_id}_override` | `climate.set_temperature` or a preset on `climate.climatemind_{area_id}`. Unlike the old entity, an override there ends at the next schedule change. |
+| `switch.climatemind_{area_id}_climate_control` | `climate.turn_on` / `climate.turn_off` on `climate.climatemind_{area_id}`. Unlike the old switch, off also switches the devices off. |
+
 ## Troubleshooting
 
 **MPC shows "learning" for a long time** - The model needs ~60 idle and ~20 heating/cooling observations. This can take a few days for rooms that heat rarely. Check progress in the Analytics tab.
 
-**Room not heating/cooling when expected** - Check outdoor gating thresholds in Settings > Control. Default: no cooling below 16 C, no heating above 22 C.
+**Room not heating/cooling when expected** - Check outdoor gating thresholds in Settings > Control. Default: no cooling below 16 C, no heating above 22 C. An active manual override ignores these limits.
+
+**Override entity switched on without a temperature** - Turning `climate.climatemind_{area_id}_override` on creates an override from the targets currently in force. Because an override ignores the outdoor limits, ClimateMind waits 3 seconds for the follow-up temperature before acting on it; a repeated `turn_on` within that time does not shorten the wait. Reloading the integration within those 3 seconds drops the wait, and the seeded targets are then used right away, as for a plain `turn_on` without a follow-up temperature.
 
 **Thermal model seems wrong after room changes** - If you've changed insulation, radiators, or moved sensors, reset the model in Settings > Reset Thermal Data.
 
@@ -136,7 +174,7 @@ No cloud services required - everything runs locally.
 
 ## Feedback & Contributing
 
-- 🐛 **Bug reports** - [Open an issue](https://github.com/snazzybean/climatemind/issues/new?template=bug_report.yml)
-- 💡 **Feature requests & ideas** - [Post in Discussions](https://github.com/snazzybean/climatemind/discussions/categories/feature-requests) so the community can vote and discuss
-- 🙋 **Questions & usage help** - [Ask in Q&A](https://github.com/snazzybean/climatemind/discussions/categories/q-a)
-- 📣 **Announcements** - [Follow Announcements](https://github.com/snazzybean/climatemind/discussions/categories/announcements)
+- 🐛 **Bug reports** - [Open an issue](https://github.com/Folg0re/climatemind/issues/new?template=bug_report.yml)
+- 💡 **Feature requests & ideas** - [Post in Discussions](https://github.com/Folg0re/climatemind/discussions/categories/feature-requests) so the community can vote and discuss
+- 🙋 **Questions & usage help** - [Ask in Q&A](https://github.com/Folg0re/climatemind/discussions/categories/q-a)
+- 📣 **Announcements** - [Follow Announcements](https://github.com/Folg0re/climatemind/discussions/categories/announcements)

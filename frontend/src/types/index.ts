@@ -18,13 +18,6 @@ export interface ScheduleEntry {
   entity_id: string;
 }
 
-export interface ScheduleTempWarning {
-  day: string;
-  from: string;
-  field: "temperature" | "heat_temperature" | "cool_temperature";
-  value: string;
-}
-
 export interface CoverScheduleEntry {
   entity_id: string;
   mode?: "force" | "gate";
@@ -52,6 +45,7 @@ export interface RoomLiveData {
   presence_away: boolean;
   mold_risk_level: "ok" | "warning" | "critical";
   mold_surface_rh: number | null;
+  mold_surface_temp: number | null;
   mold_prevention_active: boolean;
   mold_prevention_delta: number;
   blind_position: number | null;
@@ -63,11 +57,20 @@ export interface RoomLiveData {
   learning_paused_reason: "outdoor_unavailable" | null;
   compressor_protection_active: boolean;
   compressor_protection_reason: "min_off" | "min_run" | null;
+  compressor_protection_until: number | null;
   coil_dry_active: boolean;
   coil_dry_phase: "drain" | "blow" | null;
   coil_dry_until: number | null;
   coil_dry_entities: string[];
   schedule_temp_warnings: ScheduleTempWarning[];
+}
+
+/** A schedule block temperature the backend discarded as implausible (#395). */
+export interface ScheduleTempWarning {
+  day: string; // lowercase English weekday, e.g. "monday"
+  from: string; // "HH:MM:SS"
+  field: "temperature" | "heat_temperature" | "cool_temperature";
+  value: string; // the offending raw value; may not be numeric
 }
 
 export type DeviceType = "trv" | "ac";
@@ -86,6 +89,8 @@ export interface DeviceConfig {
   coil_dry_minutes?: number; // 0 = inherit global
   coil_dry_mode?: "" | "fan_only" | "dry"; // "" = inherit global
   coil_dry_fan_mode?: string; // "" = inherit global, "__keep__" = keep current
+  valve_opening_entity?: string; // number entity for direct valve opening degree (0-100%)
+  valve_closing_entity?: string; // number entity for direct valve closing degree (0-100%)
 }
 
 export type ConflictResolution =
@@ -186,6 +191,7 @@ export interface GlobalSettings {
   coil_dry_drain_minutes?: number;
   mold_detection_enabled?: boolean;
   mold_humidity_threshold?: number;
+  mold_f_rsi?: number;
   mold_sustained_minutes?: number;
   mold_notification_cooldown?: number;
   mold_notifications_enabled?: boolean;

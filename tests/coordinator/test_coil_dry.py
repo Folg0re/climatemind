@@ -514,7 +514,7 @@ async def test_running_phase_ends_when_control_is_disabled_mid_run(hass, mock_co
 
     Spec 4.2/9.5: when control is switched off mid-run the manager must still
     run, so the phase ends and the device is released — and the remembered fan
-    speed stays queued as a pending restore, because RoomMind may not command
+    speed stays queued as a pending restore, because ClimateMind may not command
     anything in this cycle.  Hooking into the else branch (with a default
     CoilDryRoomResult before the chain) leaves the phase running forever.
     """

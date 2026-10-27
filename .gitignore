@@ -210,7 +210,6 @@ __marimo__/
 # Frontend
 frontend/node_modules/
 frontend/dist/
-custom_components/climatemind/frontend/climatemind-panel.js
 
 # IDE
 .idea/
@@ -226,4 +225,3 @@ docs/plans/
 
 # Worktrees
 .worktrees/
-

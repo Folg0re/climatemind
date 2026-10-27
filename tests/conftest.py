@@ -15,14 +15,14 @@ from custom_components.climatemind.store import ClimateMindStore
 
 @pytest.fixture(autouse=True)
 def _ha_default_timezone():
-    """Set HA's configured timezone from the ``ROOMMIND_TEST_TZ`` env var.
+    """Set HA's configured timezone from the ``CLIMATEMIND_TEST_TZ`` env var.
 
     Autouse + function-scoped so every test starts from a known HA timezone and
     the previous value is restored afterwards. This isolates tests that mutate
     ``dt_util.DEFAULT_TIME_ZONE`` themselves (e.g. the schedule-resolution tests
     in ``test_schedule_utils.py``, which pin non-UTC zones via a context manager).
     """
-    tz_name = os.environ.get("ROOMMIND_TEST_TZ", "UTC")
+    tz_name = os.environ.get("CLIMATEMIND_TEST_TZ", "UTC")
     original = dt_util.get_default_time_zone()
     dt_util.set_default_time_zone(ZoneInfo(tz_name))
     try:

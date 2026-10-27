@@ -20,5 +20,6 @@ repos:
     hooks:
       - id: prettier
         types_or: [ts, javascript]
+        exclude: ^custom_components/climatemind/frontend/climatemind-panel\.js$
         additional_dependencies:
           - prettier@3

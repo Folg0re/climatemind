@@ -92,3 +92,48 @@ def test_orchestrated_parked_device_counts_only_while_running(coordinator):
     assert _label(coordinator, room, MODE_HEATING, 0.9, held, plan) == pytest.approx(0.7)
     parked = _states(trv=("heat", None), ac=("heat", "idle"))
     assert _label(coordinator, room, MODE_HEATING, 0.9, parked, plan) == 0.4
+
+
+def test_valve_controlled_trv_trains_on_its_commanded_opening(coordinator):
+    """A pinned valve reports heating however little it is open (#413)."""
+    room = {
+        "devices": [
+            {
+                "entity_id": "climate.trv",
+                "type": "trv",
+                "valve_opening_entity": "number.trv_open",
+                "valve_closing_entity": "number.trv_close",
+            }
+        ]
+    }
+    assert _label(coordinator, room, MODE_HEATING, 0.3, _states(trv=("heat", "heating"))) == 0.3
+    assert _label(coordinator, room, MODE_HEATING, 0.3, _states(trv=("heat", "idle"))) == 0.3
+    assert _label(coordinator, room, MODE_HEATING, 0.3, _states(trv=("off", "off"))) == 0.3  # nothing observable
+
+
+def test_valve_label_is_the_opening_the_valve_is_held_at(coordinator):
+    """Within the dwell the valve keeps its last opening, not the newly computed one."""
+    from custom_components.climatemind.control import direct_valve
+
+    room = {
+        "devices": [
+            {
+                "entity_id": "climate.trv",
+                "type": "trv",
+                "valve_opening_entity": "number.trv_open",
+                "valve_closing_entity": "number.trv_close",
+            }
+        ]
+    }
+    direct_valve._valve_sent["climate.trv"] = direct_valve._Held(0.0, 45, 21.0, "number.trv_open", "number.trv_close")
+    assert _label(coordinator, room, MODE_HEATING, 0.3, _states(trv=("heat", "heating"))) == 0.45
+
+
+def test_heat_only_ac_sitting_out_is_no_driven_device(coordinator):
+    """#476: the AC idles in fan_only while the TRV heats; it must not dilute the label."""
+    room = {**_room("climate.trv", "climate.ac"), "climate_mode": "heat_only"}
+    states = _states(trv=("heat", "heating"), ac=("fan_only", "fan"))
+    assert _label(coordinator, room, MODE_HEATING, 0.3, states) == 1.0
+    # A unit still running out its min run delivers all the same.
+    states = _states(trv=("heat", "heating"), ac=("heat", "heating"))
+    assert _label(coordinator, room, MODE_HEATING, 0.3, states) == 1.0
